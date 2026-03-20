@@ -1,4 +1,4 @@
-# Mini Cloud Autoscaling Simulator (Java + Maven + JavaFX)
+# Cloud Autoscaling Simulator (Java + Maven + JavaFX)
 
 ## Goal
 
