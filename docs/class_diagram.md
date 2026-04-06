@@ -5,8 +5,10 @@ classDiagram
             +long id
             +long arrivalTime
             +long serviceTimeMs
-            +RequestType type
-            +RequestStatus status
+            -RequestStatus status
+            +RequestStatus getStatus()
+            +void markDropped()
+            +void markCompleted()
         }
         class RequestStatus {
             <<enumeration>>
@@ -15,28 +17,15 @@ classDiagram
             COMPLETED
             DROPPED
         }
-        class RequestType {
-            <<enumeration>>
-            LIGHT
-            MEDIUM
-            HEAVY
-        }
         class RequestIdGenerator {
             +long nextId()
         }
         class ServiceTimeModel {
             <<interface>>
-            +long serviceTimeMs(RequestType type)
+            +long serviceTimeMs()
         }
         class ConstantServiceTimeModel {
-            +long serviceTimeMs(RequestType type)
-        }
-        class RequestTypeSelector {
-            +RequestType select()
-            +long serviceTimeMsFor(RequestType type)
-        }
-        class DistributedServiceTimeModel {
-            +long serviceTimeMs(RequestType type)
+            +long serviceTimeMs()
         }
     }
 
@@ -48,6 +37,7 @@ classDiagram
         class AbstractTrafficProfile {
             <<abstract>>
             #int baseRate
+            +abstract int requestsForTick(int tick)
         }
         class ConstantTrafficProfile {
             +int requestsForTick(int tick)
@@ -83,7 +73,7 @@ classDiagram
             LEAST_QUEUE
         }
         class LoadBalancerSelection {
-            +LoadBalancer create(LoadBalancerType type)
+            +static LoadBalancer create(LoadBalancerType type)
         }
     }
 
@@ -116,10 +106,13 @@ classDiagram
             +boolean submit(Request r)
             +int currentQueueSize()
             +InstanceSnapshot snapshot()
+            +void shutdown()
+            +boolean isTerminated()
+            +InstanceStatus getStatus()
         }
         class InstanceManager {
             +void addInstance()
-            +void removeInstance()
+            +void removeInstance(String instanceId)
             +List~ServiceInstance~ getInstances()
         }
     }
@@ -156,9 +149,22 @@ classDiagram
             +int tick()
             +long simulatedTimeMs()
         }
+        class TrafficProfileType {
+            <<enumeration>>
+            CONSTANT
+            BURSTY
+        }
+        class EventType {
+            <<enumeration>>
+            SCALE_UP
+            SCALE_DOWN
+            CONFIG_LOADED
+            SIMULATION_STARTED
+            SIMULATION_STOPPED
+        }
         class SimulationConfig {
             +int trafficRate
-            +String trafficProfile
+            +TrafficProfileType trafficProfile
             +double burstMultiplier
             +int burstIntervalTicks
             +int initialInstanceCount
@@ -166,6 +172,7 @@ classDiagram
             +int maxInstanceCount
             +int queueCapacity
             +int workerCount
+            +long serviceTimeMs
             +LoadBalancerType lbStrategy
             +boolean autoscalerEnabled
             +int scaleUpQueueThreshold
@@ -176,7 +183,7 @@ classDiagram
         }
         class SimulationEvent {
             +int tick
-            +String type
+            +EventType type
             +String message
         }
         class EventBus {
@@ -193,9 +200,9 @@ classDiagram
             +double dropRate
             +double utilization
             +int instanceCount
-            +int lightCount
-            +int mediumCount
-            +int heavyCount
+            +List~Double~ latencyHistory
+            +List~Double~ throughputHistory
+            +List~Double~ instanceCountHistory
             +List~InstanceSnapshot~ instances
         }
         class SimulationEngine {
@@ -203,16 +210,24 @@ classDiagram
             +void pause()
             +void resume()
             +void stop()
+            +void reset()
             +void setOnSnapshotReady(Consumer~Snapshot~ listener)
         }
     }
 
     namespace autoscaler {
-        class ScalingDecision {
+        class Decision {
             <<enumeration>>
             SCALE_UP
             SCALE_DOWN
             NO_ACTION
+        }
+        class ScalingDecision {
+            +Decision decision
+            +String reason
+            +static ScalingDecision noAction()
+            +static ScalingDecision scaleUp(double metric)
+            +static ScalingDecision scaleDown(double metric)
         }
         class ScalingPolicy {
             <<interface>>
@@ -248,6 +263,7 @@ classDiagram
             +int maxInstanceCount
             +int queueCapacity
             +int workerCount
+            +long serviceTimeMs
             +String loadBalancerStrategy
             +boolean autoscalerEnabled
             +int scaleUpQueueThreshold
@@ -283,9 +299,9 @@ classDiagram
         class ChartsController
         class InstancesTableController
         class ChartData {
-            +List~Double~ latencyValues
-            +List~Double~ throughputValues
-            +List~Double~ instanceCountValues
+            +double latency
+            +double throughput
+            +int instanceCount
         }
         class InstanceRow {
             +String id
@@ -304,11 +320,7 @@ classDiagram
     %% ─── VZTAHY ──────────────────────────────────────────
 
     ServiceTimeModel <|.. ConstantServiceTimeModel
-    ServiceTimeModel <|.. DistributedServiceTimeModel
     Request --> RequestStatus
-    Request --> RequestType
-    DistributedServiceTimeModel --> RequestTypeSelector
-    RequestTypeSelector --> RequestType
 
     TrafficProfile <|.. AbstractTrafficProfile
     AbstractTrafficProfile <|-- ConstantTrafficProfile
@@ -316,6 +328,7 @@ classDiagram
     TrafficGenerator --> TrafficProfile
     TrafficGenerator --> RequestIdGenerator
     TrafficGenerator --> ServiceTimeModel
+    TrafficGenerator --> SimulationClock
 
     LoadBalancer <|.. AbstractLoadBalancer
     AbstractLoadBalancer <|-- RoundRobinLoadBalancer
@@ -326,12 +339,16 @@ classDiagram
     ServiceInstance --> RequestQueue
     ServiceInstance --> InstanceConfig
     ServiceInstance --> InstanceSnapshot
+    ServiceInstance --> LatencyTracker
     InstanceManager --> ServiceInstance
-    InstanceManager --> LatencyTracker
+    InstanceManager --> InstanceConfig
+    InstanceManager --> InstanceException
 
     MetricsCollector --> LatencyTracker
     MetricsCollector --> ThroughputTracker
     MetricsCollector --> TimeSeriesBuffer
+    MetricsCollector --> SimulationConfig
+    MetricsCollector --> Snapshot
 
     SimulationEngine --> SimulationState
     SimulationEngine --> SimulationClock
@@ -342,7 +359,6 @@ classDiagram
     SimulationEngine --> MetricsCollector
     SimulationEngine --> AutoScaler
     SimulationEngine --> EventBus
-    MetricsCollector --> Snapshot
 
     ScalingPolicy <|.. ThresholdScalingPolicy
     AutoScaler --> ScalingPolicy
@@ -351,9 +367,11 @@ classDiagram
     AutoScaler --> SimulationEvent
     AutoScaler --> EventBus
     ThresholdScalingPolicy --> ScalingDecision
+    ScalingDecision --> Decision
     EventBus --> SimulationEvent
-    ServiceInstance --> LatencyTracker
+    SimulationEvent --> EventType
     InstanceSnapshot --> InstanceStatus
+    SimulationConfig --> TrafficProfileType
 
     ConfigLoader --> SimulationConfigDto
     ConfigLoader --> ConfigValidator
@@ -361,7 +379,6 @@ classDiagram
     SimulationException <|-- ConfigValidationException
     SimulationException <|-- InstanceException
     ConfigValidator --> ConfigValidationException
-    InstanceManager --> InstanceException
 
     MainApp --> MainController
     MainController --> ControlPanelController
