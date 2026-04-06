@@ -83,7 +83,7 @@ This project simulates a simplified “cloud service” handling incoming reques
 
 - simulation runs in a single engine thread (tick loop)
 - each service instance has its own worker pool (`ExecutorService`) to process requests concurrently
-- communication uses thread-safe structures (`BlockingQueue`, `ConcurrentHashMap`, atomic counters)
+- communication uses thread-safe structures (`BlockingQueue`, `AtomicInteger`, `CopyOnWriteArrayList`)
 - UI is updated from snapshots via `Platform.runLater(...)` (UI never reads mutable live state directly)
 
 ---
@@ -95,7 +95,7 @@ Autoscaling evaluates the system every N ticks:
 - scale up if average queue length or utilization is above a threshold
 - scale down if the system is underutilized and queues are near empty
 
-A cooldown timer prevents rapid scale oscillation (“thrashing”).
+A cooldown mechanism (tick-based) prevents rapid scale oscillation (“thrashing”).
 
 ---
 
@@ -103,10 +103,10 @@ A cooldown timer prevents rapid scale oscillation (“thrashing”).
 
 ### Planned UI
 
-- controls: start/pause/reset, traffic rate slider, service time slider, LB strategy dropdown
+- controls: start/pause/resume/stop/reset, traffic rate slider, LB strategy dropdown, load config
 - charts: avg latency, throughput, instance count
-- table: instances with queue length, active workers, processed count
-- optional: event log (scale up/down decisions)
+- table: instances with queue length, active workers, processed count, dropped count
+- event log (scale up/down decisions)
 
 ---
 
@@ -119,89 +119,107 @@ A cooldown timer prevents rapid scale oscillation (“thrashing”).
 
 ---
 
-## Class Design (25–30 classes, realistic scope)
+## Class Design (~52 tříd/typů)
 
-### 1) core (7–8)
+### 1) core (7)
 
-- SimulationEngine  
-- SimulationConfig  
-- SimulationClock  
-- SimulationState (enum)  
-- Snapshot (immutable for UI)  
-- SnapshotBuilder  
-- SimulationEvent (value object for log)  
+- SimulationEngine
+- SimulationConfig
+- SimulationClock
+- SimulationState (enum)
+- Snapshot (immutable record for UI)
+- SimulationEvent (value object for log)
 - EventBus (simple publish-subscribe for UI/log)
 
-### 2) traffic (4)
+### 2) traffic (5)
 
-- TrafficGenerator  
-- TrafficProfile (interface)  
-- ConstantTrafficProfile  
-- BurstyTrafficProfile  
+- TrafficGenerator
+- TrafficProfile (interface)
+- AbstractTrafficProfile (abstract — sdílí baseRate)
+- ConstantTrafficProfile (extends AbstractTrafficProfile)
+- BurstyTrafficProfile (extends AbstractTrafficProfile)
 
-### 3) request model (3–4)
+### 3) request model (8)
 
-- Request  
-- RequestStatus (enum)  
-- RequestIdGenerator  
-- ServiceTimeModel (e.g., constant or simple random-based)
+- Request
+- RequestStatus (enum)
+- RequestType (enum: LIGHT, MEDIUM, HEAVY)
+- RequestIdGenerator
+- ServiceTimeModel (interface)
+- ConstantServiceTimeModel (implements ServiceTimeModel)
+- DistributedServiceTimeModel (implements ServiceTimeModel)
+- RequestTypeSelector (váhový výběr typu + serviceTimeMs per typ)
 
-### 4) load balancing (5)
+### 4) load balancing (6)
 
-- LoadBalancer (interface)  
-- RoundRobinLoadBalancer  
-- LeastQueueLoadBalancer  
-- LoadBalancerType (enum)  
-- LoadBalancerFactory  
+- LoadBalancer (interface)
+- AbstractLoadBalancer (abstract — validace prázdného listu)
+- RoundRobinLoadBalancer (extends AbstractLoadBalancer)
+- LeastQueueLoadBalancer (extends AbstractLoadBalancer)
+- LoadBalancerType (enum)
+- LoadBalancerSelection (factory)
 
-### 5) instances (5–6)
+### 5) instances (6)
 
-- ServiceInstance  
-- InstanceManager  
-- InstanceConfig  
-- InstanceSnapshot (DTO for UI)  
-- RequestQueue (wrapper over `BlockingQueue` for metrics/limits)  
-- InstanceLifecycle (start/stop hooks)
+- ServiceInstance
+- InstanceManager
+- InstanceConfig
+- InstanceStatus (enum: ACTIVE, DRAINING)
+- InstanceSnapshot (immutable DTO for UI)
+- RequestQueue (bounded queue with drop metrics)
 
-### 6) autoscaling (4–5)
+### 6) autoscaling (5)
 
-- AutoScaler  
-- ScalingPolicy (interface)  
-- ThresholdScalingPolicy  
-- CooldownTracker  
-- ScalingDecision (enum / value object)
+- AutoScaler
+- ScalingPolicy (interface)
+- ThresholdScalingPolicy
+- CooldownTracker
+- ScalingDecision (enum)
 
-### 7) metrics (4–5)
+### 7) metrics (4)
 
-- MetricsCollector  
-- LatencyTracker  
-- ThroughputTracker  
-- UtilizationTracker  
-- TimeSeriesBuffer (stores data for charts)
+- MetricsCollector (aggregates trackers, computes utilization)
+- LatencyTracker
+- ThroughputTracker
+- TimeSeriesBuffer (ring buffer for chart data)
 
-### 8) UI (4–6)
+### 8) config (3)
 
-- MainApp  
-- MainController  
-- ControlPanelController  
-- ChartsController  
-- InstancesTableController  
+- SimulationConfigDto (Jackson-serializable POJO)
+- ConfigLoader
+- ConfigValidator
+
+### 9) exceptions (3)
+
+- SimulationException (extends RuntimeException — base)
+- ConfigValidationException (extends SimulationException)
+- InstanceException (extends SimulationException)
+
+### 10) UI (8)
+
+- MainApp
+- MainController
+- ControlPanelController
+- ChartsController
+- InstancesTableController
+- ChartData (DTO: data pro grafy)
+- InstanceRow (DTO: řádek tabulky instancí)
 - UiMapper (Snapshot → UI mapping)
 
-Total: ~28 classes (realistic, not artificially inflated).
+Total: ~57 tříd/typů (včetně rozhraní, abstraktních tříd a enumů).
 
 ---
 
-## MVP Scope (20–30 hours, architecture-focused)
+## MVP Scope
 
 ### Must
 
 - tick-based engine
 
-- korektní start/stop simulace
+- korektní start/pause/resume/stop simulace
   - zastavení generátoru
   - dokončení/ukončení worker poolů (graceful shutdown)
-  - vypnutí autoscaler timeru
+  - zastavení autoscaler evaluace (žádný separátní timer — evaluuje se v engine tick loop)
 
 - request model  
   - id  
@@ -213,8 +231,9 @@ Total: ~28 classes (realistic, not artificially inflated).
   - constant rate  
   - bursty (ON/OFF nebo „periodické špičky“)  
 
-- load balancer  
-  - round-robin  
+- load balancer
+  - round-robin
+  - least-queue
 
 - service instance  
   - bounded queue (kapacita N)  
@@ -228,10 +247,10 @@ Total: ~28 classes (realistic, not artificially inflated).
   - dropped count/rate  
   - number of instances  
 
-- autoscaler  
-  - periodicky (např. 2 s)  
-  - scale up/down podle 1 metriky (např. avg queue nebo p95 latency)  
-  - cooldown  
+- autoscaler
+  - periodicky (každých N ticků, konfigurovatelné přes `autoscalerEvaluationIntervalTicks`)
+  - scale up/down podle `avgQueueLength` (konfigurovatelné prahy `scaleUpQueueThreshold` / `scaleDownQueueThreshold`)
+  - cooldown (konfigurovatelné přes `cooldownTicks`)
 
 - UI (minimal dashboard)  
   - start/stop  
@@ -240,7 +259,7 @@ Total: ~28 classes (realistic, not artificially inflated).
 
 - simple event log (scale decisions)
 
-- immutable MetricsSnapshot (UI čte jen snapshoty, nikdy ne leze do live struktur)
+- immutable `Snapshot` (UI čte jen snapshoty přes `Platform.runLater`, nikdy ne leze do live struktur)
 
 ### Should
 
@@ -255,17 +274,14 @@ Total: ~28 classes (realistic, not artificially inflated).
   - p50   // maybe not necessary
   - p95  
 
-- hysteresis pro autoscaler  
-  - jiné prahy pro up vs down
+- hysteresis pro autoscaler
+  - jiné prahy pro up vs down (scaleUpQueueThreshold ≠ scaleDownQueueThreshold)
 
-- load balancer
-  - add another methods
+- JSON konfigurace scénáře (načtení parametrů simulace ze souboru)
 
 ### Could
 
 - chaos mode (kill instance randomly)
 - additional LB strategy (least-active)
 - load test scenarios as preset profiles
-- least-queue strategie LB  
-- export metrik do CSV  
-- konfigurace scénáře (JSON)  
+- export metrik do CSV
