@@ -55,7 +55,7 @@ This project simulates a simplified "cloud service" handling incoming requests. 
 - InstanceManager
   - drží aktivní instance
   - bezpečné přidávání/odebírání za běhu
-  - dostane `InstanceConfig` v konstruktoru pro správné parametrizování nových instancí
+  - dostane `InstanceConfig` a sdílený `LatencyTracker` v konstruktoru pro správné parametrizování a měření latence nových instancí
 
 - ServiceInstance
   - fixed worker pool
@@ -170,7 +170,7 @@ A cooldown mechanism (tick-based) prevents rapid scale oscillation ("thrashing")
 ### 5) instances (6)
 
 - ServiceInstance — má `shutdown()`, `isTerminated()`, `getStatus()`; NEMÁ `tick()`; `droppedCount` deleguje z `RequestQueue`
-- InstanceManager — dostane `InstanceConfig` v konstruktoru; `removeInstance(String instanceId)`: nastaví DRAINING, zavolá `shutdown()`, okamžitě odstraní z aktivního listu — workeři doběhnou v pozadí; `isTerminated()` jen v `stop()`; `getInstances()` vrací jen aktivní instance
+- InstanceManager — dostane `InstanceConfig` a sdílený `LatencyTracker` v konstruktoru; `removeInstance(String instanceId)`: nastaví DRAINING, zavolá `shutdown()`, okamžitě odstraní z aktivního listu — workeři doběhnou v pozadí; `isTerminated()` jen v `stop()`; `getInstances()` vrací jen aktivní instance
 - InstanceConfig
 - InstanceStatus (enum: ACTIVE, DRAINING)
 - InstanceSnapshot (immutable DTO for UI) — obsahuje `workerCount` pro výpočet utilizace v `MetricsCollector`

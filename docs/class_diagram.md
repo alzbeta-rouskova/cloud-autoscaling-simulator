@@ -348,6 +348,7 @@ classDiagram
     InstanceManager --> ServiceInstance
     InstanceManager --> InstanceConfig
     InstanceManager --> InstanceException
+    InstanceManager --> LatencyTracker
 
     MetricsCollector --> LatencyTracker
     MetricsCollector --> ThroughputTracker
