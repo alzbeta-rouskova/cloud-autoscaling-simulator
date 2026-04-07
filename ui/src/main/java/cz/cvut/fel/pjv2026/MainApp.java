@@ -6,10 +6,6 @@ import javafx.scene.control.Label;
 import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
 
-/**
- * Entry point for the Cloud Autoscaling Simulator JavaFX application.
- * Displays an empty window to verify the UI module is correctly set up.
- */
 public class MainApp extends Application {
 
     @Override
