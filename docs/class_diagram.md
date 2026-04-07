@@ -7,8 +7,9 @@ classDiagram
             +long serviceTimeMs
             -RequestStatus status
             +RequestStatus getStatus()
-            +void markDropped()
+            +void markProcessing()
             +void markCompleted()
+            +void markDropped()
         }
         class RequestStatus {
             <<enumeration>>
@@ -96,13 +97,13 @@ classDiagram
             +String id
             +int queueLength
             +int activeWorkers
+            +int workerCount
             +int processedCount
             +int droppedCount
             +InstanceStatus status
         }
         class ServiceInstance {
             -String id
-            +void tick()
             +boolean submit(Request r)
             +int currentQueueSize()
             +InstanceSnapshot snapshot()
@@ -146,6 +147,7 @@ classDiagram
             STOPPED
         }
         class SimulationClock {
+            +void advance()
             +int tick()
             +long simulatedTimeMs()
         }
@@ -336,6 +338,7 @@ classDiagram
     LoadBalancerSelection --> LoadBalancerType
     LoadBalancerSelection --> LoadBalancer
 
+    RequestQueue --> Request
     ServiceInstance --> RequestQueue
     ServiceInstance --> InstanceConfig
     ServiceInstance --> InstanceSnapshot

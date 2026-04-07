@@ -128,13 +128,13 @@ A cooldown mechanism (tick-based) prevents rapid scale oscillation ("thrashing")
 
 ---
 
-## Class Design (~57 tříd/typů)
+## Class Design (~55 tříd/typů)
 
 ### 1) core (9)
 
 - SimulationEngine — `start/pause/resume/stop/reset`; `setOnSnapshotReady`
-- SimulationConfig — konfigurace simulace; `trafficProfile` je `TrafficProfileType`; obsahuje `requestDistribution`
-- SimulationClock — tick čítač a simulovaný čas v ms
+- SimulationConfig — konfigurace simulace; `trafficProfile` je `TrafficProfileType`; `serviceTimeMs` je fixní doba zpracování requestu
+- SimulationClock — `advance()` posune tick, `tick()` vrátí aktuální hodnotu, `simulatedTimeMs()` převede na ms
 - SimulationState (enum) — `IDLE / RUNNING / PAUSED / STOPPED`
 - Snapshot (immutable record for UI) — skalární metriky + `latencyHistory`, `throughputHistory`, `instanceCountHistory` pro grafy; bez breakdown per typ requestu
 - SimulationEvent (value object for log) — `tick`, `EventType type`, `message`
@@ -150,9 +150,9 @@ A cooldown mechanism (tick-based) prevents rapid scale oscillation ("thrashing")
 - ConstantTrafficProfile (extends AbstractTrafficProfile)
 - BurstyTrafficProfile (extends AbstractTrafficProfile)
 
-### 3) request model (4)
+### 3) request model (5)
 
-- Request — `status` je `private volatile`; přístup přes `getStatus()`, `markDropped()`, `markCompleted()`; bez pole `type`
+- Request — `status` je `private volatile`; přístup přes `getStatus()`, `markProcessing()`, `markCompleted()`, `markDropped()`; bez pole `type`
 - RequestStatus (enum)
 - RequestIdGenerator
 - ServiceTimeModel (interface) — `long serviceTimeMs()` bez parametru
@@ -169,11 +169,11 @@ A cooldown mechanism (tick-based) prevents rapid scale oscillation ("thrashing")
 
 ### 5) instances (6)
 
-- ServiceInstance — přidá `shutdown()`, `isTerminated()`, `getStatus()`; `droppedCount` deleguje z `RequestQueue`
-- InstanceManager — dostane `InstanceConfig` v konstruktoru; `removeInstance(String instanceId)` pro explicitní výběr
+- ServiceInstance — má `shutdown()`, `isTerminated()`, `getStatus()`; NEMÁ `tick()`; `droppedCount` deleguje z `RequestQueue`
+- InstanceManager — dostane `InstanceConfig` v konstruktoru; `removeInstance(String instanceId)`: nastaví DRAINING, zavolá `shutdown()`, okamžitě odstraní z aktivního listu — workeři doběhnou v pozadí; `isTerminated()` jen v `stop()`; `getInstances()` vrací jen aktivní instance
 - InstanceConfig
 - InstanceStatus (enum: ACTIVE, DRAINING)
-- InstanceSnapshot (immutable DTO for UI)
+- InstanceSnapshot (immutable DTO for UI) — obsahuje `workerCount` pro výpočet utilizace v `MetricsCollector`
 - RequestQueue (bounded queue with drop metrics)
 
 ### 6) autoscaling (6)
@@ -234,7 +234,6 @@ Total: ~57 tříd/typů (včetně rozhraní, abstraktních tříd a enumů).
   - id
   - arrivalTime (nastaveno z `SimulationClock.simulatedTimeMs()`)
   - serviceTimeMs
-  - type
 
 - traffic generator
   - constant rate
@@ -280,7 +279,7 @@ Total: ~57 tříd/typů (včetně rozhraní, abstraktních tříd a enumů).
 - hysteresis pro autoscaler
   - jiné prahy pro up vs down (scaleUpQueueThreshold ≠ scaleDownQueueThreshold)
 
-- JSON konfigurace scénáře (načtení parametrů simulace ze souboru včetně `requestDistribution`)
+- JSON konfigurace scénáře (načtení parametrů simulace ze souboru)
 
 ### Could
 
