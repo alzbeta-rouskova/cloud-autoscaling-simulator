@@ -9,12 +9,12 @@ public class CooldownTracker {
         this.cooldownTicks = cooldownTicks;
     }
 
-    public boolean canScale(int currentTick) {
+    public boolean canScale(long currentTick) {
 
         throw new UnsupportedOperationException("Not implemented yet");
     }
 
-    public void recordScale(int currentTick) {
+    public void recordScale(long currentTick) {
 
         throw new UnsupportedOperationException("Not implemented yet");
     }

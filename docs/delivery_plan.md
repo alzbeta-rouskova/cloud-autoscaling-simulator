@@ -65,7 +65,7 @@ Kompletní simulační smyčka. Metriky se logují přes SLF4J do konzole.
 **Poznámky:**
 - `MetricsCollector` vlastní `LatencyTracker` a předává ho do `ServiceInstance` při konstrukci
 - `ThroughputTracker` dostane `tickDurationMs` z `SimulationConfig` přes `MetricsCollector`
-- `MetricsCollector.buildSnapshot(int tick, List<InstanceSnapshot> instanceSnapshots)` — 2 parametry, bez type counts
+- `MetricsCollector.buildSnapshot(long tick, List<InstanceSnapshot> instanceSnapshots)` — 2 parametry, bez type counts
 - `Snapshot` obsahuje historické řady `latencyHistory`, `throughputHistory`, `instanceCountHistory` (plněné z `TimeSeriesBuffer` v `MetricsCollector`)
 
 ---

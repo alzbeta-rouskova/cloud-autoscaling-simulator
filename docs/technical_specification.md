@@ -146,7 +146,7 @@ A cooldown mechanism (tick-based) prevents rapid scale oscillation ("thrashing")
 
 - TrafficGenerator — dostane `SimulationClock` a `ServiceTimeModel` v konstruktoru
 - TrafficProfile (interface)
-- AbstractTrafficProfile (abstract — sdílí `baseRate`; deklaruje `abstract int requestsForTick(int tick)`)
+- AbstractTrafficProfile (abstract — sdílí `baseRate`; deklaruje `abstract int requestsForTick(long tick)`)
 - ConstantTrafficProfile (extends AbstractTrafficProfile)
 - BurstyTrafficProfile (extends AbstractTrafficProfile)
 
@@ -187,7 +187,7 @@ A cooldown mechanism (tick-based) prevents rapid scale oscillation ("thrashing")
 
 ### 7) metrics (4)
 
-- MetricsCollector — vlastní `LatencyTracker`; `buildSnapshot(int tick, List<InstanceSnapshot>)`; dostane `tickDurationMs` ze `SimulationConfig`
+- MetricsCollector — vlastní `LatencyTracker`; `buildSnapshot(long tick, List<InstanceSnapshot>)`; dostane `tickDurationMs` ze `SimulationConfig`
 - LatencyTracker — sdílená instance injected do `ServiceInstance`
 - ThroughputTracker — dostane `tickDurationMs` v konstruktoru
 - TimeSeriesBuffer (ring buffer for chart data)

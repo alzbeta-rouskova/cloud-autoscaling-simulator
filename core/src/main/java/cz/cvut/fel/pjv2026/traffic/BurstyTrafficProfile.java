@@ -12,7 +12,7 @@ public class BurstyTrafficProfile extends AbstractTrafficProfile {
     }
 
     @Override
-    public int requestsForTick(int tick) {
+    public int requestsForTick(long tick) {
 
         throw new UnsupportedOperationException("Not implemented yet");
     }

@@ -33,23 +33,23 @@ classDiagram
     namespace traffic {
         class TrafficProfile {
             <<interface>>
-            +int requestsForTick(int tick)
+            +int requestsForTick(long tick)
         }
         class AbstractTrafficProfile {
             <<abstract>>
             #int baseRate
-            +abstract int requestsForTick(int tick)
+            +abstract int requestsForTick(long tick)
         }
         class ConstantTrafficProfile {
-            +int requestsForTick(int tick)
+            +int requestsForTick(long tick)
         }
         class BurstyTrafficProfile {
             -double burstMultiplier
             -int burstIntervalTicks
-            +int requestsForTick(int tick)
+            +int requestsForTick(long tick)
         }
         class TrafficGenerator {
-            +List~Request~ generate(int tick)
+            +List~Request~ generate(long tick)
         }
     }
 
@@ -126,7 +126,7 @@ classDiagram
         }
         class ThroughputTracker {
             -int tickDurationMs
-            +void record(int count, int currentTick)
+            +void record(int count, long currentTick)
             +double requestsPerSecond()
         }
         class TimeSeriesBuffer {
@@ -134,7 +134,7 @@ classDiagram
             +List~Double~ values()
         }
         class MetricsCollector {
-            +Snapshot buildSnapshot(int tick, List~InstanceSnapshot~ instanceSnapshots)
+            +Snapshot buildSnapshot(long tick, List~InstanceSnapshot~ instanceSnapshots)
         }
     }
 
@@ -147,8 +147,10 @@ classDiagram
             STOPPED
         }
         class SimulationClock {
+            -long currentTick
+            -int tickDurationMs
             +void advance()
-            +int tick()
+            +long tick()
             +long simulatedTimeMs()
         }
         class TrafficProfileType {
@@ -184,7 +186,7 @@ classDiagram
             +int tickDurationMs
         }
         class SimulationEvent {
-            +int tick
+            +long tick
             +EventType type
             +String message
         }
@@ -194,7 +196,7 @@ classDiagram
             +void unsubscribe(Consumer~SimulationEvent~ listener)
         }
         class Snapshot {
-            +int tick
+            +long tick
             +double throughput
             +double avgLatency
             +double avgQueueLength
@@ -244,13 +246,13 @@ classDiagram
         }
         class CooldownTracker {
             -int cooldownTicks
-            +boolean canScale(int currentTick)
-            +void recordScale(int currentTick)
+            +boolean canScale(long currentTick)
+            +void recordScale(long currentTick)
             +void reset()
         }
         class AutoScaler {
             -int evaluationIntervalTicks
-            +void evaluate(Snapshot snapshot, int currentTick)
+            +void evaluate(Snapshot snapshot, long currentTick)
         }
     }
 

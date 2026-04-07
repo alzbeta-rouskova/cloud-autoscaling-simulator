@@ -22,7 +22,7 @@ public class AutoScaler {
         this.eventBus = eventBus;
     }
 
-    public void evaluate(Snapshot snapshot, int currentTick) {
+    public void evaluate(Snapshot snapshot, long currentTick) {
         throw new UnsupportedOperationException("Not implemented yet");
     }
 }

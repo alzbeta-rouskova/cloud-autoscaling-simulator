@@ -10,5 +10,5 @@ public abstract class AbstractTrafficProfile implements TrafficProfile {
     }
 
     @Override
-    public abstract int requestsForTick(int tick);
+    public abstract int requestsForTick(long tick);
 }

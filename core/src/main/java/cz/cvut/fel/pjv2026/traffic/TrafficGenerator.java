@@ -21,7 +21,7 @@ public class TrafficGenerator {
         this.clock = clock;
     }
 
-    public List<Request> generate(int tick) {
+    public List<Request> generate(long tick) {
 
         throw new UnsupportedOperationException("Not implemented yet");
     }
