@@ -392,4 +392,5 @@ classDiagram
     MainController --> UiMapper
     UiMapper --> Snapshot
     MainController --> SimulationEngine
+    MainController --> EventBus
 ```
