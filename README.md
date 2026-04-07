@@ -28,3 +28,13 @@ core/   simulation logic
 ui/     JavaFX interface
   charts, instance table, control panel
 ```
+
+## Documentation
+
+All documentation is located in the `docs/` directory:
+
+- `class_diagram.md` / `class_diagram.svg` — class diagram with relationships
+- `state_diagram.md` — application state diagram
+- `technical_specification.md` — architecture overview
+- `product_description.md` — product description and goals
+- `delivery_plan.md` — milestone plan
