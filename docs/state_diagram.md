@@ -1,6 +1,6 @@
 ```mermaid
 stateDiagram-v2
-    [*] --> IDLE : aplikace spuštěna
+    [*] --> IDLE : application started
 
     IDLE --> RUNNING : start()
 
@@ -11,5 +11,5 @@ stateDiagram-v2
     PAUSED --> STOPPED : stop()
 
     STOPPED --> IDLE : reset()
-    STOPPED --> [*] : aplikace ukončena
+    STOPPED --> [*] : application terminated
 ```

@@ -4,17 +4,6 @@
 
 This project simulates a simplified "cloud service" handling incoming requests. Requests are generated over time, routed through a load balancer to multiple service instances, processed concurrently, and measured via metrics (latency, throughput, queue lengths). An autoscaler adjusts the number of instances based on system load. A JavaFX GUI visualizes the system behavior in real time.
 
----
-
-### Why this project
-
-- learn core cloud concepts by building them: load balancing, scaling, queueing, backpressure
-- practice clean architecture: separation of simulation core and UI
-- practice concurrency in Java using `ExecutorService`, concurrent queues, and snapshot-based UI updates
-- produce a portfolio-friendly demo app (interactive GUI + metrics + strategies)
-
----
-
 ### What is simulated
 
 - incoming requests arriving according to a traffic profile (constant / bursty)
@@ -23,8 +12,6 @@ This project simulates a simplified "cloud service" handling incoming requests. 
 - autoscaler periodically evaluates metrics and scales instances up/down with cooldown to avoid thrashing
 - metrics are collected continuously and shown in GUI charts
 
----
-
 ### What is intentionally simplified
 
 - no real networking/HTTP stack
@@ -32,70 +19,56 @@ This project simulates a simplified "cloud service" handling incoming requests. 
 - no persistence/database layer
 - time is simulated (tick-based), not real-time accurate to nanoseconds
 
----
-
 ## Architecture Overview
 
 - SimulationEngine
   - simulation loop (tick)
-  - orchestruje generator → load balancer → instances
-  - spouští metrics + autoscaling
-  - publikuje immutable snapshoty pro UI
+  - orchestrates generator → load balancer → instances
+  - triggers metrics + autoscaling
+  - publishes immutable snapshots for the UI
 
 - TrafficGenerator
-  - generuje requesty podle profilu
+  - generates requests according to the selected profile
   - constant / bursty
-  - nastavuje `arrivalTime` z injected `SimulationClock`
-  - nastavuje `serviceTimeMs` z `ConstantServiceTimeModel`
+  - sets `arrivalTime` from the injected `SimulationClock`
+  - sets `serviceTimeMs` from `ConstantServiceTimeModel`
 
 - LoadBalancer
-  - vybírá cílovou instanci
-  - např. round-robin, least-queue
+  - selects the target instance
+  - e.g. round-robin, least-queue
 
 - InstanceManager
-  - drží aktivní instance
-  - bezpečné přidávání/odebírání za běhu
-  - dostane `InstanceConfig` a sdílený `LatencyTracker` v konstruktoru pro správné parametrizování a měření latence nových instancí
+  - holds the active instances
+  - safe addition/removal at runtime
+  - receives `InstanceConfig` and the shared `LatencyTracker` in the constructor to properly parameterize and measure latency of new instances
 
 - ServiceInstance
   - fixed worker pool
   - bounded queue (backpressure)
-  - při full → drop
-  - graceful shutdown přes `shutdown()` / `isTerminated()`
+  - when full → drop
+  - graceful shutdown via `shutdown()` / `isTerminated()`
 
 - MetricsCollector
   - throughput
   - latency
   - queue length
   - utilization
-  - vlastní `LatencyTracker`; sdílená instance je injected do `ServiceInstance`
+  - owns `LatencyTracker`; the shared instance is injected into `ServiceInstance`
 
 - AutoScaler
   - scaling policy
   - cooldown
   - scale up/down
-  - loguje důvod rozhodnutí přes `ScalingDecision.reason`
+  - logs the decision reason via `ScalingDecision.reason`
 
 - JavaFX UI
   - start/pause/resume/stop/reset
-  - změna parametrů
-  - grafy (latency, throughput, instances)
-  - tabulka instancí
-  - čte snapshoty (thread-safety přes `Platform.runLater`)
+  - parameter changes
+  - charts (latency, throughput, instances)
+  - instance table
+  - reads snapshots (thread-safety via `Platform.runLater`)
 
----
-
-## Concurrency Model
-
-- simulation runs in a single engine thread (tick loop)
-- each service instance has its own worker pool (`ExecutorService`) to process requests concurrently
-- communication uses thread-safe structures (`BlockingQueue`, `AtomicInteger`, `CopyOnWriteArrayList`)
-- UI is updated from snapshots via `Platform.runLater(...)` (UI never reads mutable live state directly)
-- `EventBus.publish()` is called from the engine thread; UI subscribers must wrap their handler in `Platform.runLater()` to avoid `IllegalStateException`
-
----
-
-## Scaling Behavior (architecture-focused)
+## Scaling Behavior
 
 Autoscaling evaluates the system every N ticks:
 
@@ -103,10 +76,6 @@ Autoscaling evaluates the system every N ticks:
 - scale down if the system is underutilized and queues are near empty
 
 A cooldown mechanism (tick-based) prevents rapid scale oscillation ("thrashing").
-
-`ScalingDecision` je record obsahující `Decision decision` a `String reason`, takže každé rozhodnutí nese i důvod (např. `"avgQueue=9.2"`). Factory metody `noAction()`, `scaleUp(double metric)`, `scaleDown(double metric)` zajišťují konzistentní formát zpráv.
-
----
 
 ## GUI
 
@@ -117,63 +86,52 @@ A cooldown mechanism (tick-based) prevents rapid scale oscillation ("thrashing")
 - table: instances with queue length, active workers, processed count, dropped count
 - event log (scale up/down decisions with reason)
 
----
-
-## Roadmap
-
-- MVP 1: core simulation (generator + LB + instances) + basic metrics (CLI)
-- MVP 2: autoscaling with cooldown
-- MVP 3: JavaFX GUI + charts + instance table
-- Polish: export CSV, config load/save, additional strategies
-
----
-
-## Class Design (~55 tříd/typů)
+## Class Design (~55 classes/types)
 
 ### 1) core (9)
 
 - SimulationEngine — `start/pause/resume/stop/reset`; `setOnSnapshotReady`
-- SimulationConfig — konfigurace simulace; `trafficProfile` je `TrafficProfileType`; `serviceTimeMs` je fixní doba zpracování requestu
-- SimulationClock — `advance()` posune tick, `tick()` vrátí aktuální hodnotu, `simulatedTimeMs()` převede na ms
+- SimulationConfig — simulation configuration; `trafficProfile` is a `TrafficProfileType`; `serviceTimeMs` is the fixed request processing time
+- SimulationClock — `advance()` moves the tick forward, `tick()` returns the current value, `simulatedTimeMs()` converts it to ms
 - SimulationState (enum) — `IDLE / RUNNING / PAUSED / STOPPED`
-- Snapshot (immutable record for UI) — skalární metriky + `latencyHistory`, `throughputHistory`, `instanceCountHistory` pro grafy; bez breakdown per typ requestu
+- Snapshot (immutable record for UI) — scalar metrics + `latencyHistory`, `throughputHistory`, `instanceCountHistory` for charts; no breakdown per request type
 - SimulationEvent (value object for log) — `tick`, `EventType type`, `message`
-- EventBus (simple publish-subscribe for UI/log) — `publish()` volá se z engine threadu; UI handlers musí použít `Platform.runLater()`
-- TrafficProfileType (enum) — `CONSTANT / BURSTY`; type-safe alternativa k `String`
+- EventBus (simple publish-subscribe for UI/log) — `publish()` is called from the engine thread; UI handlers must use `Platform.runLater()`
+- TrafficProfileType (enum) — `CONSTANT / BURSTY`; a type-safe alternative to `String`
 - EventType (enum) — `SCALE_UP / SCALE_DOWN / CONFIG_LOADED / SIMULATION_STARTED / SIMULATION_STOPPED`
 
 ### 2) traffic (5)
 
-- TrafficGenerator — dostane `SimulationClock` a `ServiceTimeModel` v konstruktoru
+- TrafficGenerator — receives `SimulationClock` and `ServiceTimeModel` in the constructor
 - TrafficProfile (interface)
-- AbstractTrafficProfile (abstract — sdílí `baseRate`; deklaruje `abstract int requestsForTick(long tick)`)
+- AbstractTrafficProfile (abstract — shares `baseRate`; declares `abstract int requestsForTick(long tick)`)
 - ConstantTrafficProfile (extends AbstractTrafficProfile)
 - BurstyTrafficProfile (extends AbstractTrafficProfile)
 
 ### 3) request model (5)
 
-- Request — `status` je `private volatile`; přístup přes `getStatus()`, `markProcessing()`, `markCompleted()`, `markDropped()`; bez pole `type`
+- Request — `status` is `private volatile`; accessed via `getStatus()`, `markProcessing()`, `markCompleted()`, `markDropped()`; no `type` field
 - RequestStatus (enum)
 - RequestIdGenerator
-- ServiceTimeModel (interface) — `long serviceTimeMs()` bez parametru
-- ConstantServiceTimeModel (implements ServiceTimeModel) — vrací fixní hodnotu z `SimulationConfig.serviceTimeMs`
+- ServiceTimeModel (interface) — `long serviceTimeMs()` with no parameter
+- ConstantServiceTimeModel (implements ServiceTimeModel) — returns a fixed value from `SimulationConfig.serviceTimeMs`
 
 ### 4) load balancing (6)
 
 - LoadBalancer (interface)
-- AbstractLoadBalancer (abstract — validace prázdného listu)
+- AbstractLoadBalancer (abstract — validates an empty list)
 - RoundRobinLoadBalancer (extends AbstractLoadBalancer)
-- LeastQueueLoadBalancer (extends AbstractLoadBalancer) — přeskakuje instance ve stavu `DRAINING` přes `getStatus()`
+- LeastQueueLoadBalancer (extends AbstractLoadBalancer) — skips instances in the `DRAINING` state via `getStatus()`
 - LoadBalancerType (enum)
-- LoadBalancerSelection (factory) — `create()` je statická metoda
+- LoadBalancerSelection (factory) — `create()` is a static method
 
 ### 5) instances (6)
 
-- ServiceInstance — má `shutdown()`, `isTerminated()`, `getStatus()`; NEMÁ `tick()`; `droppedCount` deleguje z `RequestQueue`
-- InstanceManager — dostane `InstanceConfig` a sdílený `LatencyTracker` v konstruktoru; `removeInstance(String instanceId)`: nastaví DRAINING, zavolá `shutdown()`, okamžitě odstraní z aktivního listu — workeři doběhnou v pozadí; `isTerminated()` jen v `stop()`; `getInstances()` vrací jen aktivní instance
+- ServiceInstance — has `shutdown()`, `isTerminated()`, `getStatus()`; does NOT have `tick()`; `droppedCount` is delegated from `RequestQueue`
+- InstanceManager — receives `InstanceConfig` and the shared `LatencyTracker` in the constructor; `removeInstance(String instanceId)`: sets the instance to DRAINING, calls `shutdown()`, and immediately removes it from the active list — workers finish in the background; `isTerminated()` is used only in `stop()`; `getInstances()` returns only active instances
 - InstanceConfig
 - InstanceStatus (enum: ACTIVE, DRAINING)
-- InstanceSnapshot (immutable DTO for UI) — obsahuje `workerCount` pro výpočet utilizace v `MetricsCollector`
+- InstanceSnapshot (immutable DTO for UI) — contains `workerCount` for utilization calculation in `MetricsCollector`
 - RequestQueue (bounded queue with drop metrics)
 
 ### 6) autoscaling (6)
@@ -182,19 +140,19 @@ A cooldown mechanism (tick-based) prevents rapid scale oscillation ("thrashing")
 - ScalingPolicy (interface)
 - ThresholdScalingPolicy
 - CooldownTracker
-- ScalingDecision (record) — `Decision decision`, `String reason`; factory metody `noAction()`, `scaleUp(double)`, `scaleDown(double)`
-- Decision (enum: SCALE_UP, SCALE_DOWN, NO_ACTION) — vnořený v `ScalingDecision`
+- ScalingDecision (record) — `Decision decision`, `String reason`; factory methods `noAction()`, `scaleUp(double)`, `scaleDown(double)`
+- Decision (enum: SCALE_UP, SCALE_DOWN, NO_ACTION) — nested inside `ScalingDecision`
 
 ### 7) metrics (4)
 
-- MetricsCollector — vlastní `LatencyTracker`; `buildSnapshot(long tick, List<InstanceSnapshot>)`; dostane `tickDurationMs` ze `SimulationConfig`
-- LatencyTracker — sdílená instance injected do `ServiceInstance`
-- ThroughputTracker — dostane `tickDurationMs` v konstruktoru
+- MetricsCollector — owns `LatencyTracker`; `buildSnapshot(long tick, List<InstanceSnapshot>)`; receives `tickDurationMs` from `SimulationConfig`
+- LatencyTracker — the shared instance is injected into `ServiceInstance`
+- ThroughputTracker — receives `tickDurationMs` in the constructor
 - TimeSeriesBuffer (ring buffer for chart data)
 
 ### 8) config (3)
 
-- SimulationConfigDto (Jackson-serializable POJO) — obsahuje `long serviceTimeMs` pro fixní dobu zpracování
+- SimulationConfigDto (Jackson-serializable POJO) — contains `long serviceTimeMs` for the fixed processing time
 - ConfigLoader
 - ConfigValidator
 
@@ -211,13 +169,9 @@ A cooldown mechanism (tick-based) prevents rapid scale oscillation ("thrashing")
 - ControlPanelController
 - ChartsController
 - InstancesTableController
-- ChartData (DTO: jeden datový bod pro grafy — `double latency`, `double throughput`, `int instanceCount`; grafy si historii plní samy z `Snapshot.latencyHistory` apod.)
-- InstanceRow (DTO: řádek tabulky instancí)
+- ChartData (DTO: a single data point for charts — `double latency`, `double throughput`, `int instanceCount`; charts manage their own history from `Snapshot.latencyHistory` etc.)
+- InstanceRow (DTO: a row in the instance table)
 - UiMapper (Snapshot → UI mapping)
-
-Total: ~57 tříd/typů (včetně rozhraní, abstraktních tříd a enumů).
-
----
 
 ## MVP Scope
 
@@ -225,28 +179,28 @@ Total: ~57 tříd/typů (včetně rozhraní, abstraktních tříd a enumů).
 
 - tick-based engine
 
-- korektní start/pause/resume/stop/reset simulace
-  - zastavení generátoru
-  - dokončení/ukončení worker poolů (graceful shutdown přes `ServiceInstance.shutdown()`)
-  - reset přes `SimulationEngine.reset()` vrátí systém do stavu `IDLE`
+- correct start/pause/resume/stop/reset of the simulation
+  - stopping the generator
+  - finishing/terminating worker pools (graceful shutdown via `ServiceInstance.shutdown()`)
+  - reset via `SimulationEngine.reset()` returns the system to the `IDLE` state
 
 - request model
   - id
-  - arrivalTime (nastaveno z `SimulationClock.simulatedTimeMs()`)
+  - arrivalTime (set from `SimulationClock.simulatedTimeMs()`)
   - serviceTimeMs
 
 - traffic generator
   - constant rate
-  - bursty (ON/OFF nebo „periodické špičky")
+  - bursty (ON/OFF or "periodic spikes")
 
 - load balancer
   - round-robin
   - least-queue
 
 - service instance
-  - bounded queue (kapacita N)
+  - bounded queue (capacity N)
   - worker pool (fixed thread pool)
-  - když full → drop + metrika
+  - when full → drop + metric
 
 - metrics
   - throughput (req/s)
@@ -256,34 +210,34 @@ Total: ~57 tříd/typů (včetně rozhraní, abstraktních tříd a enumů).
   - number of instances
 
 - autoscaler
-  - periodicky (každých N ticků, konfigurovatelné přes `autoscalerEvaluationIntervalTicks`)
-  - scale up/down podle `avgQueueLength` (konfigurovatelné prahy `scaleUpQueueThreshold` / `scaleDownQueueThreshold`)
-  - cooldown (konfigurovatelné přes `cooldownTicks`)
-  - loguje důvod rozhodnutí v `ScalingDecision.reason`
+  - periodically (every N ticks, configurable via `autoscalerEvaluationIntervalTicks`)
+  - scale up/down based on `avgQueueLength` (configurable thresholds `scaleUpQueueThreshold` / `scaleDownQueueThreshold`)
+  - cooldown (configurable via `cooldownTicks`)
+  - logs the decision reason in `ScalingDecision.reason`
 
 - UI (minimal dashboard)
   - start/stop/reset
-  - 2–3 grafy (request rate, latency, instances)
-  - pár live hodnot (dropped, queue, throughput)
+  - 2–3 charts (request rate, latency, instances)
+  - a few live values (dropped, queue, throughput)
 
 - simple event log (scale decisions with reason)
 
-- immutable `Snapshot` (UI čte jen snapshoty přes `Platform.runLater`, nikdy ne leze do live struktur)
+- immutable `Snapshot` (the UI reads only snapshots, never accessing live structures directly)
 
 ### Should
 
-- percentily latence
+- latency percentiles
   - p50   // maybe not necessary
   - p95
 
-- hysteresis pro autoscaler
-  - jiné prahy pro up vs down (scaleUpQueueThreshold ≠ scaleDownQueueThreshold)
+- autoscaler hysteresis
+  - different thresholds for up vs down (scaleUpQueueThreshold ≠ scaleDownQueueThreshold)
 
-- JSON konfigurace scénáře (načtení parametrů simulace ze souboru)
+- JSON scenario configuration (loading simulation parameters from a file)
 
 ### Could
 
 - chaos mode (kill instance randomly)
 - additional LB strategy (least-active)
 - load test scenarios as preset profiles
-- export metrik do CSV
+- export metrics to CSV
