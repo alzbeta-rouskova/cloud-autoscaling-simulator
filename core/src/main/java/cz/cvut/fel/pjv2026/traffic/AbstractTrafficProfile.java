@@ -1,9 +1,18 @@
 package cz.cvut.fel.pjv2026.traffic;
 
+/**
+ * Shared base for traffic profiles. Holds the baseline rate that
+ * subclasses may modulate (e.g. with periodic spikes).
+ */
 public abstract class AbstractTrafficProfile implements TrafficProfile {
 
-    protected int baseRate;
+    protected final int baseRate;
 
+    /**
+     * Creates a profile with the given baseline rate.
+     *
+     * @param baseRate baseline number of requests per tick; must be non-negative
+     */
     protected AbstractTrafficProfile(int baseRate) {
 
         this.baseRate = baseRate;
