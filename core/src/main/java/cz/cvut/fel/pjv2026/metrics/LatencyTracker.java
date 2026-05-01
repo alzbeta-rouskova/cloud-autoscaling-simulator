@@ -2,18 +2,24 @@ package cz.cvut.fel.pjv2026.metrics;
 
 public class LatencyTracker {
 
-    public void record(long latencyMs) {
+    private long sum;
+    private long count;
 
-        throw new UnsupportedOperationException("Not implemented yet");
+    public synchronized void record(long latencyMs) {
+        sum += latencyMs;
+        count++;
     }
 
-    public double average() {
+    public synchronized double average() {
+        if (count == 0) {
+            return 0.0;
+        }
 
-        throw new UnsupportedOperationException("Not implemented yet");
+        return (double) sum / count;
     }
 
-    public void reset() {
-
-        throw new UnsupportedOperationException("Not implemented yet");
+    public synchronized void reset() {
+        sum = 0;
+        count = 0;
     }
 }
