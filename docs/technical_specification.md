@@ -46,7 +46,7 @@ This project simulates a simplified "cloud service" handling incoming requests. 
   - fixed worker pool
   - bounded queue (backpressure)
   - when full → drop
-  - graceful shutdown via `shutdown()` / `isTerminated()`
+  - graceful shutdown via `retire()` / `isTerminated()`
 
 - MetricsCollector
   - throughput
@@ -127,8 +127,8 @@ A cooldown mechanism (tick-based) prevents rapid scale oscillation ("thrashing")
 
 ### 5) instances (6)
 
-- ServiceInstance — has `shutdown()`, `isTerminated()`, `getStatus()`; does NOT have `tick()`; `droppedCount` is delegated from `RequestQueue`
-- InstanceManager — receives `InstanceConfig` and the shared `LatencyTracker` in the constructor; `removeInstance(String instanceId)`: sets the instance to DRAINING, calls `shutdown()`, and immediately removes it from the active list — workers finish in the background; `isTerminated()` is used only in `stop()`; `getInstances()` returns only active instances
+- ServiceInstance — single retirement entry point `retire()` (atomically marks DRAINING, signals workers, shuts down pool); also `isTerminated()`, `getStatus()`; does NOT have `tick()`; `droppedCount` is delegated from `RequestQueue`
+- InstanceManager — receives `InstanceConfig` and the shared `LatencyTracker` in the constructor; `retireInstance(String instanceId)`: calls `instance.retire()` (marks DRAINING + shuts down pool); the instance remains in the list until its pool terminates, at which point `sweepTerminated()` (called by the engine each tick) removes it; `getInstances()` returns all non-swept instances (ACTIVE + DRAINING) — load balancers filter to ACTIVE via `AbstractLoadBalancer.activeOnly()`; `isTerminated()` is also used in `stop()`
 - InstanceConfig
 - InstanceStatus (enum: ACTIVE, DRAINING)
 - InstanceSnapshot (immutable DTO for UI) — contains `workerCount` for utilization calculation in `MetricsCollector`

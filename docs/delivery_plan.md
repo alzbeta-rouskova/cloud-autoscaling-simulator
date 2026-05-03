@@ -50,8 +50,8 @@ Requests flow through the load balancer into the instances, where they are eithe
 **Notes:**
 - `InstanceManager` receives `InstanceConfig` and the shared `LatencyTracker` in its constructor (used when creating new instances via `addInstance()`)
 - `ServiceInstance` receives `LatencyTracker` in its constructor (injected by `InstanceManager`, which gets it from `MetricsCollector`)
-- `ServiceInstance` has `shutdown()`, `isTerminated()`, `getStatus()`; it does NOT have `tick()`
-- `InstanceManager.removeInstance(String instanceId)` - sets the instance to DRAINING, calls `shutdown()`, and immediately removes it from the active list; workers finish in the background; `isTerminated()` is used only in `stop()` for a graceful shutdown; `getInstances()` returns only active instances
+- `ServiceInstance` has `retire()` (single retirement entry point — marks DRAINING, signals workers, shuts down pool), `isTerminated()`, `getStatus()`; it does NOT have `tick()`
+- `InstanceManager.retireInstance(String instanceId)` - calls `instance.retire()` (marks DRAINING + shuts down the pool); the instance stays in the list until its pool terminates; `sweepTerminated()` is called by the engine at the start of each tick and removes instances where `isTerminated() == true`; `getInstances()` returns all non-swept instances (ACTIVE + DRAINING) — load balancers filter to ACTIVE themselves; `isTerminated()` is also used in `stop()` for a graceful shutdown
 - `LoadBalancerSelection.create()` is a static factory method
 
 ---

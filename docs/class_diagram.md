@@ -107,13 +107,14 @@ classDiagram
             +boolean submit(Request r)
             +int currentQueueSize()
             +InstanceSnapshot snapshot()
-            +void shutdown()
+            +void retire()
             +boolean isTerminated()
             +InstanceStatus getStatus()
         }
         class InstanceManager {
             +void addInstance()
-            +void removeInstance(String instanceId)
+            +void retireInstance(String instanceId)
+            +void sweepTerminated()
             +List~ServiceInstance~ getInstances()
         }
     }
