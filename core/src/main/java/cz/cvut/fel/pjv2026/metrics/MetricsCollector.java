@@ -3,11 +3,28 @@ package cz.cvut.fel.pjv2026.metrics;
 import cz.cvut.fel.pjv2026.core.SimulationConfig;
 import cz.cvut.fel.pjv2026.core.Snapshot;
 import cz.cvut.fel.pjv2026.instance.InstanceSnapshot;
+import cz.cvut.fel.pjv2026.instance.InstanceStatus;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 
+/**
+ * Aggregates per-tick simulation metrics into an immutable {@link Snapshot}.
+ * Owns the shared {@link LatencyTracker} (injected into every
+ * {@link cz.cvut.fel.pjv2026.instance.ServiceInstance}) plus a private
+ * {@link ThroughputTracker} and three rolling history buffers backing
+ * the dashboard charts.
+ * <p>
+ * Not thread-safe — {@link #buildSnapshot(long, List)} must be called only
+ * from the engine thread.
+ */
 public class MetricsCollector {
 
+    private static final Logger log = LoggerFactory.getLogger(MetricsCollector.class);
+
+    /** Number of points retained in each history buffer (rolling window for charts). */
     private static final int HISTORY_CAPACITY = 120;
 
     private final LatencyTracker latencyTracker;
@@ -17,17 +34,102 @@ public class MetricsCollector {
     private final TimeSeriesBuffer instanceCountBuffer;
     private final SimulationConfig config;
 
+    /** Cumulative processed count from the previous snapshot, used to compute per-tick delta. */
+    private long previousTotalProcessed = 0;
+
+    /**
+     * Creates a fresh collector wired to the given configuration.
+     *
+     * @param config simulation configuration; only {@code tickDurationMs} is read here
+     */
     public MetricsCollector(SimulationConfig config) {
         this.config = config;
         this.latencyTracker = new LatencyTracker();
-        this.throughputTracker = new ThroughputTracker(config.tickDurationMs);
+        this.throughputTracker = new ThroughputTracker(config.tickDurationMs());
         this.latencyBuffer = new TimeSeriesBuffer(HISTORY_CAPACITY);
         this.throughputBuffer = new TimeSeriesBuffer(HISTORY_CAPACITY);
         this.instanceCountBuffer = new TimeSeriesBuffer(HISTORY_CAPACITY);
     }
 
-    public Snapshot buildSnapshot(long tick, List<InstanceSnapshot> instanceSnapshots) {
+    /**
+     * Returns the shared latency tracker. Worker threads inside each
+     * {@link cz.cvut.fel.pjv2026.instance.ServiceInstance} report request
+     * latencies into it; the collector reads and resets it once per tick.
+     *
+     * @return the shared {@link LatencyTracker}
+     */
+    public LatencyTracker latencyTracker() {
+        return latencyTracker;
+    }
 
-        throw new UnsupportedOperationException("Not implemented yet");
+    /**
+     * Computes aggregate metrics from the given instance snapshots and produces
+     * an immutable {@link Snapshot} for the current tick.
+     * <p>
+     * Side effects (intentional, single-threaded):
+     * <ul>
+     *   <li>records the per-tick processed delta in the throughput tracker</li>
+     *   <li>resets the latency tracker (per-tick average semantics)</li>
+     *   <li>appends new points to the three history buffers</li>
+     * </ul>
+     *
+     * @param tick              current tick index
+     * @param instanceSnapshots snapshots of all non-terminated instances (ACTIVE + DRAINING)
+     * @return immutable snapshot of the current simulation state
+     */
+    public Snapshot buildSnapshot(long tick, List<InstanceSnapshot> instanceSnapshots) {
+        int activeCount = 0;
+        long sumQueue = 0;
+        long sumDropped = 0;
+        long sumProcessed = 0;
+        long sumActiveWorkers = 0;
+        long sumWorkerCount = 0;
+
+        for (InstanceSnapshot s : instanceSnapshots) {
+            if (s.status == InstanceStatus.ACTIVE) {
+                activeCount++;
+            }
+            sumQueue += s.queueLength;
+            sumDropped += s.droppedCount;
+            sumProcessed += s.processedCount;
+            sumActiveWorkers += s.activeWorkers;
+            sumWorkerCount += s.workerCount;
+        }
+
+        long completionsThisTick = Math.max(0L, sumProcessed - previousTotalProcessed);
+        previousTotalProcessed = sumProcessed;
+        throughputTracker.record((int) completionsThisTick, tick);
+
+        double avgLatency = latencyTracker.average();
+        latencyTracker.reset();
+
+        double throughput = throughputTracker.requestsPerSecond();
+        int instanceCount = instanceSnapshots.size();
+        double avgQueueLength = instanceCount == 0 ? 0.0 : (double) sumQueue / instanceCount;
+        double utilization = sumWorkerCount == 0 ? 0.0 : (double) sumActiveWorkers / sumWorkerCount;
+        long totalActivity = sumProcessed + sumDropped;
+        double dropRate = totalActivity == 0 ? 0.0 : (double) sumDropped / totalActivity;
+
+        latencyBuffer.add(avgLatency);
+        throughputBuffer.add(throughput);
+        instanceCountBuffer.add(activeCount);
+
+        log.debug("tick={} throughput={} avgLatency={} avgQueue={} active={} dropped={}",
+                tick, throughput, avgLatency, avgQueueLength, activeCount, sumDropped);
+
+        return new Snapshot(
+                tick,
+                throughput,
+                avgLatency,
+                avgQueueLength,
+                (int) sumDropped,
+                dropRate,
+                utilization,
+                activeCount,
+                latencyBuffer.values(),
+                throughputBuffer.values(),
+                instanceCountBuffer.values(),
+                instanceSnapshots
+        );
     }
 }
