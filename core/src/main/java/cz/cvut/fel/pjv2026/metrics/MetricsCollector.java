@@ -8,6 +8,8 @@ import java.util.List;
 
 public class MetricsCollector {
 
+    private static final int HISTORY_CAPACITY = 120;
+
     private final LatencyTracker latencyTracker;
     private final ThroughputTracker throughputTracker;
     private final TimeSeriesBuffer latencyBuffer;
@@ -19,9 +21,9 @@ public class MetricsCollector {
         this.config = config;
         this.latencyTracker = new LatencyTracker();
         this.throughputTracker = new ThroughputTracker(config.tickDurationMs);
-        this.latencyBuffer = new TimeSeriesBuffer();
-        this.throughputBuffer = new TimeSeriesBuffer();
-        this.instanceCountBuffer = new TimeSeriesBuffer();
+        this.latencyBuffer = new TimeSeriesBuffer(HISTORY_CAPACITY);
+        this.throughputBuffer = new TimeSeriesBuffer(HISTORY_CAPACITY);
+        this.instanceCountBuffer = new TimeSeriesBuffer(HISTORY_CAPACITY);
     }
 
     public Snapshot buildSnapshot(long tick, List<InstanceSnapshot> instanceSnapshots) {
