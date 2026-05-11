@@ -4,33 +4,46 @@ import cz.cvut.fel.pjv2026.instance.InstanceSnapshot;
 
 import java.util.List;
 
-public class Snapshot {
-
-    public long tick;
-    public double throughput;
-    public double avgLatency;
-    public double avgQueueLength;
-    public int droppedCount;
-    public double dropRate;
-    public double utilization;
-    public int instanceCount;
-    public List<Double> latencyHistory;
-    public List<Double> throughputHistory;
-    public List<Double> instanceCountHistory;
-    public List<InstanceSnapshot> instances;
-
-    public Snapshot(long tick, double throughput, double avgLatency, double avgQueueLength, int droppedCount, double dropRate, double utilization, int instanceCount, List<Double> latencyHistory, List<Double> throughputHistory, List<Double> instanceCountHistory, List<InstanceSnapshot> instances) {
-        this.tick = tick;
-        this.throughput = throughput;
-        this.avgLatency = avgLatency;
-        this.avgQueueLength = avgQueueLength;
-        this.droppedCount = droppedCount;
-        this.dropRate = dropRate;
-        this.utilization = utilization;
-        this.instanceCount = instanceCount;
-        this.latencyHistory = latencyHistory;
-        this.throughputHistory = throughputHistory;
-        this.instanceCountHistory = instanceCountHistory;
-        this.instances = instances;
+/**
+ * Immutable point-in-time view of the simulation state, produced by
+ * {@link cz.cvut.fel.pjv2026.metrics.MetricsCollector} once per tick
+ * and consumed by the UI on the JavaFX thread.
+ * <p>
+ * All list components are defensively copied via {@link List#copyOf(java.util.Collection)}
+ * so the snapshot is safe to publish across threads and cannot be mutated
+ * by holders of the original collections.
+ *
+ * @param tick                  monotonic tick index at which the snapshot was taken
+ * @param throughput            requests per second over the latest 1-second window
+ * @param avgLatency            average request latency in ms during the current tick
+ * @param avgQueueLength        average queue length across all ACTIVE instances
+ * @param droppedCount          total number of requests dropped since simulation start
+ * @param dropRate              ratio of dropped to submitted requests in this tick
+ * @param utilization           fraction of busy workers across all ACTIVE instances (0..1)
+ * @param activeInstanceCount   number of ACTIVE instances (drives autoscaler decisions)
+ * @param latencyHistory        rolling history of {@code avgLatency} values
+ * @param throughputHistory     rolling history of {@code throughput} values
+ * @param instanceCountHistory  rolling history of {@code activeInstanceCount} values
+ * @param instances             all non-terminated instances (ACTIVE + DRAINING) for the UI table
+ */
+public record Snapshot(
+        long tick,
+        double throughput,
+        double avgLatency,
+        double avgQueueLength,
+        int droppedCount,
+        double dropRate,
+        double utilization,
+        int activeInstanceCount,
+        List<Double> latencyHistory,
+        List<Double> throughputHistory,
+        List<Double> instanceCountHistory,
+        List<InstanceSnapshot> instances
+) {
+    public Snapshot {
+        latencyHistory = List.copyOf(latencyHistory);
+        throughputHistory = List.copyOf(throughputHistory);
+        instanceCountHistory = List.copyOf(instanceCountHistory);
+        instances = List.copyOf(instances);
     }
 }
