@@ -1,17 +1,19 @@
 package cz.cvut.fel.pjv2026.core;
 
-public class SimulationEvent {
+/**
+ * Represents an event that occurs during the simulation, such as scaling actions, traffic changes, or errors.
+ *
+ * @param tick    the simulation tick at which the event occurred
+ * @param type    the type of the event
+ * @param message a descriptive message about the event
+ */
+public record SimulationEvent(long tick, EventType type, String message) {
 
-    public long tick;
-    public EventType type;
-    public String message;
-
-    public SimulationEvent(long tick, EventType type, String message) {
-        this.tick = tick;
-        this.type = type;
-        this.message = message;
-    }
-
+    /**
+     * Returns a string representation of the simulation event, including the tick, event type, and message.
+     *
+     * @return a string representation of the simulation event
+     */
     @Override
     public String toString() {
         return "[tick=" + tick + "] " + type + ": " + message;
