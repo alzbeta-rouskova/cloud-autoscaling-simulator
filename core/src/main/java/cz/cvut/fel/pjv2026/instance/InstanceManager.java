@@ -52,14 +52,18 @@ public class InstanceManager {
     }
 
     /**
-     * Creates a new ACTIVE service instance with a fresh id and adds it to the
-     * managed list.
+     * Creates a new ACTIVE service instance with a fresh id, adds it to the
+     * managed list, and returns the id so callers (e.g. the autoscaler) can
+     * include it in event messages and logs.
+     *
+     * @return id of the newly added instance
      */
-    public void addInstance() {
+    public String addInstance() {
         String id = "instance-" + idCounter.incrementAndGet();
         ServiceInstance instance = new ServiceInstance(id, config, latencyTracker);
         instances.add(instance);
         log.info("added instance {}", id);
+        return id;
     }
 
     /**
@@ -102,8 +106,8 @@ public class InstanceManager {
 
     /**
      * Returns all managed instances, including DRAINING ones that have not yet
-     * been swept. Load balancers must filter to ACTIVE via
-     * {@link cz.cvut.fel.pjv2026.lb.AbstractLoadBalancer#activeOnly(List)}.
+     * been swept. Load balancers must filter to ACTIVE via the
+     * {@code activeOnly} helper on {@link cz.cvut.fel.pjv2026.lb.AbstractLoadBalancer}.
      *
      * @return unmodifiable view of currently managed instances
      */

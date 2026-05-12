@@ -109,6 +109,7 @@ public class SimulationEngine {
         engineThread = new Thread(this::runLoop, "engine-thread");
         engineThread.start();
         log.info("simulation started with {} initial instance(s)", config.initialInstanceCount());
+        eventBus.publish(new SimulationEvent(clock.tick(), EventType.SIMULATION_STARTED, "simulation started with " + config.initialInstanceCount() + " instance(s)"));
     }
 
     /**
@@ -165,6 +166,7 @@ public class SimulationEngine {
         }
         awaitInstancesTerminated();
         log.info("simulation stopped");
+        eventBus.publish(new SimulationEvent(clock.tick(), EventType.SIMULATION_STOPPED, "simulation stopped"));
     }
 
     /**
@@ -233,6 +235,10 @@ public class SimulationEngine {
                     .map(ServiceInstance::snapshot)
                     .toList();
             Snapshot snapshot = metricsCollector.buildSnapshot(currentTick, instanceSnapshots);
+
+            if (config.autoscalerEnabled()) {
+                autoScaler.evaluate(snapshot, currentTick);
+            }
 
             Consumer<Snapshot> listener = snapshotListener;
             if (listener != null) {
