@@ -34,7 +34,7 @@ class SnapshotTest {
     private static Snapshot sampleSnapshot(List<InstanceSnapshot> instances) {
         return new Snapshot(
                 0L, 0.0, 0.0, 0.0,
-                0, 0.0, 0.0, 0,
+                0, 0.0, 0.0, 0, 0,
                 List.of(), List.of(), List.of(),
                 instances
         );

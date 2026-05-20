@@ -217,6 +217,7 @@ public class SimulationEngine {
             instanceManager.sweepTerminated();
 
             List<Request> requests = trafficGenerator.generate(currentTick);
+            metricsCollector.recordGeneratedRequests(requests.size());
             for (Request request : requests) {
                 List<ServiceInstance> instances = instanceManager.getInstances();
                 if (instances.isEmpty()) {
@@ -240,9 +241,30 @@ public class SimulationEngine {
                 autoScaler.evaluate(snapshot, currentTick);
             }
 
+            // Re-capture instance states after the autoscaler ran so DRAINING
+            // transitions (and freshly added instances) are visible in the UI.
+            List<InstanceSnapshot> postScalingInstances = instanceManager.getInstances().stream()
+                    .map(ServiceInstance::snapshot)
+                    .toList();
+            Snapshot uiSnapshot = new Snapshot(
+                    snapshot.tick(),
+                    snapshot.throughput(),
+                    snapshot.avgLatency(),
+                    snapshot.avgQueueLength(),
+                    snapshot.droppedCount(),
+                    snapshot.dropRate(),
+                    snapshot.utilization(),
+                    snapshot.activeInstanceCount(),
+                    snapshot.requestsThisTick(),
+                    snapshot.latencyHistory(),
+                    snapshot.throughputHistory(),
+                    snapshot.instanceCountHistory(),
+                    postScalingInstances
+            );
+
             Consumer<Snapshot> listener = snapshotListener;
             if (listener != null) {
-                listener.accept(snapshot);
+                listener.accept(uiSnapshot);
             }
 
             log.debug("tick {} throughput={} dropped={} active={}",
