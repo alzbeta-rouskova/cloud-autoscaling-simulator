@@ -1,0 +1,17 @@
+{
+  "trafficRate": 25,
+  "trafficProfile": "CONSTANT",
+  "burstMultiplier": 1.0,
+  "burstIntervalTicks": 20,
+  "initialInstanceCount": 2,
+  "minInstanceCount": 1,
+  "maxInstanceCount": 10,
+  "queueCapacity": 50,
+  "workerCount": 3,
+  "serviceTimeMs": 20,
+  "loadBalancerStrategy": "LEAST_QUEUE",
+  "autoscalerEnabled": true,
+  "scaleUpQueueThreshold": 4,
+  "scaleDownQueueThreshold": 3,
+  "cooldownTicks": 3
+}
