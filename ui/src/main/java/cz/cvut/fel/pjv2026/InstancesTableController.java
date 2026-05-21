@@ -18,11 +18,10 @@ public class InstancesTableController {
 
     private final UiMapper uiMapper = new UiMapper();
     private final ObservableList<InstanceRow> rows = FXCollections.observableArrayList();
-    private final TableView<InstanceRow> table;
     private final VBox root;
 
     public InstancesTableController() {
-        table = new TableView<>(rows);
+        TableView<InstanceRow> table = new TableView<>(rows);
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
         table.setPlaceholder(new javafx.scene.control.Label("No instances yet"));
 

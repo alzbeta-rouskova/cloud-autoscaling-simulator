@@ -34,7 +34,6 @@ public class ControlPanelController {
     private final Button stopButton = new Button("■ Stop");
     private final Button resetButton = new Button("↻ Reset");
     private final Button loadConfigButton = new Button("Load config");
-    private final Button saveLogButton = new Button("Save log");
 
     private final Slider trafficRateSlider = new Slider(1, 200, 50);
     private final Label trafficRateValue = new Label("50");
@@ -71,6 +70,7 @@ public class ControlPanelController {
         stopButton.setOnAction(e -> { if (onStop != null) onStop.run(); });
         resetButton.setOnAction(e -> { if (onReset != null) onReset.run(); });
         loadConfigButton.setOnAction(e -> handleLoadConfig());
+        Button saveLogButton = new Button("Save log");
         saveLogButton.setOnAction(e -> handleSaveLog());
 
         startButton.setStyle("-fx-base: #4caf50;");

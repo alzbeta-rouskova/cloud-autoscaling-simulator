@@ -12,10 +12,6 @@ import java.util.List;
 
 public class ChartsController {
 
-    private final LineChart<Number, Number> throughputChart;
-    private final LineChart<Number, Number> latencyChart;
-    private final LineChart<Number, Number> instanceChart;
-
     private final XYChart.Series<Number, Number> throughputSeries = new XYChart.Series<>();
     private final XYChart.Series<Number, Number> latencySeries = new XYChart.Series<>();
     private final XYChart.Series<Number, Number> instanceSeries = new XYChart.Series<>();
@@ -23,9 +19,9 @@ public class ChartsController {
     private final VBox root;
 
     public ChartsController() {
-        throughputChart = buildChart("Throughput", "tick", "req/s");
-        latencyChart = buildChart("Average latency", "tick", "ms");
-        instanceChart = buildChart("Active instances", "tick", "count");
+        LineChart<Number, Number> throughputChart = buildChart("Throughput", "req/s");
+        LineChart<Number, Number> latencyChart = buildChart("Average latency", "ms");
+        LineChart<Number, Number> instanceChart = buildChart("Active instances", "count");
 
         throughputChart.getData().add(throughputSeries);
         latencyChart.getData().add(latencySeries);
@@ -57,18 +53,17 @@ public class ChartsController {
 
     private void replaceSeries(XYChart.Series<Number, Number> series, List<Double> history, long lastTick) {
         series.getData().clear();
-        long firstTick = lastTick - history.size() + 1;
-        long t = firstTick;
+        long t = lastTick - history.size() + 1;
         for (Double value : history) {
             series.getData().add(new XYChart.Data<>(t, value));
             t++;
         }
     }
 
-    private static LineChart<Number, Number> buildChart(String title, String xLabel, String yLabel) {
+    private static LineChart<Number, Number> buildChart(String title, String yLabel) {
         NumberAxis xAxis = new NumberAxis();
         NumberAxis yAxis = new NumberAxis();
-        xAxis.setLabel(xLabel);
+        xAxis.setLabel("tick");
         yAxis.setLabel(yLabel);
         xAxis.setForceZeroInRange(false);
         yAxis.setForceZeroInRange(true);
