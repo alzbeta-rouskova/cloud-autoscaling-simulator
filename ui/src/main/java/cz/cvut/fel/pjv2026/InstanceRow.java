@@ -2,6 +2,12 @@ package cz.cvut.fel.pjv2026;
 
 import cz.cvut.fel.pjv2026.instance.InstanceStatus;
 
+/**
+ * UI DTO representing one row in the instances table, built from a single
+ * {@link cz.cvut.fel.pjv2026.instance.InstanceSnapshot} by {@link UiMapper}.
+ * Both ACTIVE and DRAINING instances are shown; the {@link #status} column
+ * distinguishes them.
+ */
 public class InstanceRow {
 
     public String id;

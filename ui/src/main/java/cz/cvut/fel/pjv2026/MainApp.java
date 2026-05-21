@@ -5,6 +5,12 @@ import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.stage.Stage;
 
+/**
+ * JavaFX application entry point. Builds the primary scene from
+ * {@link MainController}, wires the close handler to a graceful engine
+ * shutdown, and forwards JavaFX lifecycle events to the controller.
+ * For jar packaging see {@link Launcher}.
+ */
 public class MainApp extends Application {
 
     private MainController controller;
@@ -27,7 +33,6 @@ public class MainApp extends Application {
     }
 
     public static void main(String[] args) {
-
         launch(args);
     }
 }

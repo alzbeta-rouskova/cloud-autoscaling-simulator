@@ -42,6 +42,17 @@ import org.slf4j.LoggerFactory;
 import java.nio.file.Path;
 import java.util.function.Consumer;
 
+/**
+ * Root controller of the JavaFX dashboard. Owns the three sub-controllers
+ * (control panel, charts, instances table), wires their callbacks to the
+ * lifecycle of a {@link SimulationEngine}, and forwards engine snapshots
+ * and events back to the UI on the JavaFX thread.
+ * <p>
+ * A fresh engine is constructed on every {@code start()}: the controller
+ * keeps the most recent {@link SimulationConfig}, applies live UI overrides
+ * (traffic rate, load-balancer strategy, max instances) on top of it, and
+ * passes the result to {@link #buildEngine(SimulationConfig)}.
+ */
 public class MainController {
 
     private static final Logger log = LoggerFactory.getLogger(MainController.class);
@@ -100,10 +111,17 @@ public class MainController {
         root.setRight(instancesTable.getView());
     }
 
+    /**
+     * @return the root node hosting the full dashboard
+     */
     public Node getView() {
         return root;
     }
 
+    /**
+     * Stops the engine if it is running or paused. Safe to call multiple times
+     * and from JavaFX lifecycle hooks (window close, {@code Application.stop}).
+     */
     public void shutdown() {
         if (engine == null) {
             return;

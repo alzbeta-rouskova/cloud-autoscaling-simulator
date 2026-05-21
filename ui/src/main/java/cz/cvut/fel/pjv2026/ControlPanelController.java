@@ -26,6 +26,13 @@ import java.nio.file.Path;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
+/**
+ * Top control panel of the dashboard: lifecycle buttons (Start / Stop / Reset),
+ * Load config / Save log buttons, traffic-rate slider, load-balancer dropdown
+ * and max-instances spinner. The controller is purely view-side — it exposes
+ * the user's current selections through getters and forwards button clicks to
+ * callbacks set by the parent ({@link MainController}).
+ */
 public class ControlPanelController {
 
     private final Stage stage;
@@ -91,28 +98,65 @@ public class ControlPanelController {
         root.setAlignment(Pos.CENTER_LEFT);
     }
 
+    /**
+     * @return root node to embed in the parent layout
+     */
     public Node getView() {
         return root;
     }
 
+    /**
+     * @return current value of the traffic-rate slider (requests per tick)
+     */
     public int getTrafficRate() {
         return (int) trafficRateSlider.getValue();
     }
 
+    /**
+     * @return currently selected load-balancer strategy
+     */
     public LoadBalancerType getLoadBalancerType() {
         return lbCombo.getValue();
     }
 
+    /**
+     * @return current value of the max-instances spinner
+     */
     public int getMaxInstances() {
         return maxInstancesSpinner.getValue();
     }
 
-    public void setOnStart(Runnable r) { this.onStart = r; }
-    public void setOnStop(Runnable r) { this.onStop = r; }
-    public void setOnReset(Runnable r) { this.onReset = r; }
-    public void setOnConfigLoaded(Consumer<Path> c) { this.onConfigLoaded = c; }
-    public void setLogContentSupplier(Supplier<String> supplier) { this.logContentSupplier = supplier; }
+    /** Registers the callback fired by the Start button. */
+    public void setOnStart(Runnable r) {
+        this.onStart = r;
+    }
 
+    /** Registers the callback fired by the Stop button. */
+    public void setOnStop(Runnable r) {
+        this.onStop = r;
+    }
+
+    /** Registers the callback fired by the Reset button. */
+    public void setOnReset(Runnable r) {
+        this.onReset = r;
+    }
+
+    /** Registers the callback fired after the user picks a JSON config file. */
+    public void setOnConfigLoaded(Consumer<Path> c) {
+        this.onConfigLoaded = c;
+    }
+
+    /** Registers a supplier that produces the event-log text saved by Save log. */
+    public void setLogContentSupplier(Supplier<String> supplier) {
+        this.logContentSupplier = supplier;
+    }
+
+    /**
+     * Populates the control widgets from the given configuration. Called after
+     * a successful config load so the UI reflects the loaded values.
+     *
+     * @param config configuration to mirror in the UI
+     */
     public void applyConfig(SimulationConfig config) {
         trafficRateSlider.setValue(config.trafficRate());
         trafficRateValue.setText(String.valueOf(config.trafficRate()));
@@ -120,6 +164,13 @@ public class ControlPanelController {
         maxInstancesSpinner.getValueFactory().setValue(config.maxInstanceCount());
     }
 
+    /**
+     * Enables and disables widgets according to the engine lifecycle state.
+     * Live parameter widgets (slider, dropdown, spinner) and the Load config
+     * button are disabled while the engine is running or stopped.
+     *
+     * @param state current engine state
+     */
     public void updateState(SimulationState state) {
         switch (state) {
             case IDLE -> {

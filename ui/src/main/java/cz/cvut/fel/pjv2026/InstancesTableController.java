@@ -14,6 +14,12 @@ import javafx.scene.layout.VBox;
 
 import java.util.List;
 
+/**
+ * Owns the right-side instances table. Each row corresponds to one service
+ * instance (ACTIVE or DRAINING) and is rebuilt from the latest snapshot on
+ * every UI update. The Status column is colour-coded: green for ACTIVE,
+ * orange for DRAINING.
+ */
 public class InstancesTableController {
 
     private final UiMapper uiMapper = new UiMapper();
@@ -72,15 +78,26 @@ public class InstancesTableController {
         VBox.setVgrow(table, Priority.ALWAYS);
     }
 
+    /**
+     * @return root node to embed in the parent layout
+     */
     public Node getView() {
         return root;
     }
 
+    /**
+     * Replaces all rows with views built from the snapshot's per-instance data.
+     *
+     * @param snapshot current engine snapshot
+     */
     public void update(Snapshot snapshot) {
         List<InstanceRow> newRows = uiMapper.toInstanceRows(snapshot);
         rows.setAll(newRows);
     }
 
+    /**
+     * Removes all rows; called on simulation reset.
+     */
     public void clear() {
         rows.clear();
     }
