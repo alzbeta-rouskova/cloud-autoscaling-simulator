@@ -7,15 +7,15 @@
 
 ## Milestones
 
-| Milestone | Content |
-|-----------|---------|
-| M0        | Project setup — Maven multi-module skeleton, GitLab repository |
-| M1        | Request model + traffic generator |
-| M2        | Load balancer + service instances |
+| Milestone | Content                                                         |
+|-----------|-----------------------------------------------------------------|
+| M0        | Project setup — Maven multi-module skeleton, GitLab repository  |
+| M1        | Request model + traffic generator                               |
+| M2        | Load balancer + service instances                               |
 | M3        | Metrics + simulation engine (first live simulation, CLI output) |
-| M4        | Autoscaler + event log |
-| M5        | JSON configuration + JavaFX dashboard |
-| M6        | User and technical documentation (GitLab Wiki + JavaDoc) |
+| M4        | Autoscaler + event log                                          |
+| M5        | JSON configuration + JavaFX dashboard                           |
+| M6        | User and technical documentation (GitLab Wiki + JavaDoc)        |
 
 ---
 
