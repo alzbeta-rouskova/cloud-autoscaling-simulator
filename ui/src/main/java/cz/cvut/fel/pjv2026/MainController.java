@@ -1,4 +1,260 @@
 package cz.cvut.fel.pjv2026;
 
+import cz.cvut.fel.pjv2026.autoscaler.AutoScaler;
+import cz.cvut.fel.pjv2026.autoscaler.CooldownTracker;
+import cz.cvut.fel.pjv2026.autoscaler.ScalingPolicy;
+import cz.cvut.fel.pjv2026.autoscaler.ThresholdScalingPolicy;
+import cz.cvut.fel.pjv2026.config.ConfigLoader;
+import cz.cvut.fel.pjv2026.core.EventBus;
+import cz.cvut.fel.pjv2026.core.SimulationClock;
+import cz.cvut.fel.pjv2026.core.SimulationConfig;
+import cz.cvut.fel.pjv2026.core.SimulationEngine;
+import cz.cvut.fel.pjv2026.core.SimulationEvent;
+import cz.cvut.fel.pjv2026.core.SimulationState;
+import cz.cvut.fel.pjv2026.core.Snapshot;
+import cz.cvut.fel.pjv2026.core.TrafficProfileType;
+import cz.cvut.fel.pjv2026.exception.ConfigValidationException;
+import cz.cvut.fel.pjv2026.instance.InstanceConfig;
+import cz.cvut.fel.pjv2026.instance.InstanceManager;
+import cz.cvut.fel.pjv2026.lb.LoadBalancer;
+import cz.cvut.fel.pjv2026.lb.LoadBalancerSelection;
+import cz.cvut.fel.pjv2026.metrics.MetricsCollector;
+import cz.cvut.fel.pjv2026.model.ConstantServiceTimeModel;
+import cz.cvut.fel.pjv2026.model.RequestIdGenerator;
+import cz.cvut.fel.pjv2026.traffic.BurstyTrafficProfile;
+import cz.cvut.fel.pjv2026.traffic.ConstantTrafficProfile;
+import cz.cvut.fel.pjv2026.traffic.TrafficGenerator;
+import cz.cvut.fel.pjv2026.traffic.TrafficProfile;
+import javafx.application.Platform;
+import javafx.geometry.Insets;
+import javafx.scene.Node;
+import javafx.scene.control.Alert;
+import javafx.scene.control.Label;
+import javafx.scene.control.TextArea;
+import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.VBox;
+import javafx.stage.Stage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.nio.file.Path;
+import java.util.function.Consumer;
+
 public class MainController {
+
+    private static final Logger log = LoggerFactory.getLogger(MainController.class);
+
+    private final ControlPanelController controlPanel;
+    private final ChartsController charts;
+    private final InstancesTableController instancesTable;
+
+    private final Label tickLabel = new Label("Tick: 0");
+    private final Label generatedLabel = new Label("Generated: 0");
+    private final Label throughputLabel = new Label("Throughput: 0.0 req/s");
+    private final Label latencyLabel = new Label("Latency: 0.0 ms");
+    private final Label dropLabel = new Label("Dropped: 0");
+    private final Label activeLabel = new Label("Active: 0");
+    private final TextArea eventLog = new TextArea();
+
+    private final ConfigLoader configLoader = new ConfigLoader();
+    private final UiMapper uiMapper = new UiMapper();
+
+    private final BorderPane root;
+
+    private SimulationConfig currentConfig = SimulationConfig.builder().build();
+    private SimulationEngine engine;
+    private EventBus engineEventBus;
+    private Consumer<SimulationEvent> eventSubscriber;
+
+    public MainController(Stage stage) {
+        this.controlPanel = new ControlPanelController(stage);
+        this.charts = new ChartsController();
+        this.instancesTable = new InstancesTableController();
+
+        controlPanel.setOnStart(this::startSimulation);
+        controlPanel.setOnStop(this::stopSimulation);
+        controlPanel.setOnReset(this::resetSimulation);
+        controlPanel.setOnConfigLoaded(this::loadConfigFile);
+        controlPanel.setLogContentSupplier(eventLog::getText);
+        controlPanel.applyConfig(currentConfig);
+        controlPanel.updateState(SimulationState.IDLE);
+
+        eventLog.setEditable(false);
+        eventLog.setPrefRowCount(8);
+
+        HBox statusBar = new HBox(20, tickLabel, generatedLabel, throughputLabel, latencyLabel, dropLabel, activeLabel);
+        statusBar.setPadding(new Insets(6, 12, 6, 12));
+        statusBar.setStyle("-fx-background-color: #f0f0f0;");
+
+        Label eventLogTitle = new Label("Event log");
+        eventLogTitle.setPadding(new Insets(4, 8, 0, 8));
+
+        VBox center = new VBox(6, statusBar, charts.getView(), eventLogTitle, eventLog);
+        VBox.setVgrow(charts.getView(), Priority.ALWAYS);
+
+        root = new BorderPane();
+        root.setTop(controlPanel.getView());
+        root.setCenter(center);
+        root.setRight(instancesTable.getView());
+    }
+
+    public Node getView() {
+        return root;
+    }
+
+    public void shutdown() {
+        if (engine == null) {
+            return;
+        }
+        SimulationState s = engine.state();
+        if (s == SimulationState.RUNNING || s == SimulationState.PAUSED) {
+            engine.stop();
+        }
+    }
+
+    private void loadConfigFile(Path path) {
+        try {
+            currentConfig = configLoader.load(path);
+            controlPanel.applyConfig(currentConfig);
+            appendEventLog("[CONFIG] loaded " + path.getFileName());
+        } catch (ConfigValidationException e) {
+            log.error("config load failed: {}", e.getMessage());
+            showError("Failed to load config", e.getMessage());
+        }
+    }
+
+    private void startSimulation() {
+        if (engine != null && engine.state() != SimulationState.IDLE) {
+            return;
+        }
+        SimulationConfig effective = applyUiOverrides(currentConfig);
+        engine = buildEngine(effective);
+
+        engine.setOnSnapshotReady(snapshot ->
+                Platform.runLater(() -> updateUi(snapshot)));
+        eventSubscriber = event ->
+                Platform.runLater(() -> appendEventLog(event.toString()));
+        engineEventBus.subscribe(eventSubscriber);
+
+        charts.clear();
+        instancesTable.clear();
+        eventLog.clear();
+        resetLabels();
+
+        engine.start();
+        controlPanel.updateState(SimulationState.RUNNING);
+    }
+
+    private void stopSimulation() {
+        if (engine == null) {
+            return;
+        }
+        engine.stop();
+        unsubscribeEvents();
+        controlPanel.updateState(SimulationState.STOPPED);
+    }
+
+    private void resetSimulation() {
+        if (engine != null) {
+            if (engine.state() == SimulationState.RUNNING || engine.state() == SimulationState.PAUSED) {
+                engine.stop();
+                unsubscribeEvents();
+            }
+            engine.reset();
+            engine = null;
+        }
+        charts.clear();
+        instancesTable.clear();
+        resetLabels();
+        controlPanel.updateState(SimulationState.IDLE);
+    }
+
+    private void updateUi(Snapshot snapshot) {
+        ChartData data = uiMapper.toChartData(snapshot);
+        tickLabel.setText("Tick: " + snapshot.tick());
+        generatedLabel.setText("Generated: " + snapshot.requestsThisTick());
+        throughputLabel.setText(String.format("Throughput: %.1f req/s", data.throughput));
+        latencyLabel.setText(String.format("Latency: %.1f ms", data.latency));
+        dropLabel.setText("Dropped: " + snapshot.droppedCount());
+        activeLabel.setText("Active: " + snapshot.activeInstanceCount());
+        charts.update(snapshot);
+        instancesTable.update(snapshot);
+    }
+
+    private void appendEventLog(String line) {
+        eventLog.appendText(line + System.lineSeparator());
+    }
+
+    private void resetLabels() {
+        tickLabel.setText("Tick: 0");
+        generatedLabel.setText("Generated: 0");
+        throughputLabel.setText("Throughput: 0.0 req/s");
+        latencyLabel.setText("Latency: 0.0 ms");
+        dropLabel.setText("Dropped: 0");
+        activeLabel.setText("Active: 0");
+    }
+
+    private void unsubscribeEvents() {
+        if (engineEventBus != null && eventSubscriber != null) {
+            engineEventBus.unsubscribe(eventSubscriber);
+        }
+        eventSubscriber = null;
+    }
+
+    private SimulationConfig applyUiOverrides(SimulationConfig base) {
+        return base.toBuilder()
+                .trafficRate(controlPanel.getTrafficRate())
+                .lbStrategy(controlPanel.getLoadBalancerType())
+                .maxInstanceCount(controlPanel.getMaxInstances())
+                .build();
+    }
+
+    private SimulationEngine buildEngine(SimulationConfig config) {
+        SimulationClock clock = new SimulationClock(config.tickDurationMs());
+        MetricsCollector metrics = new MetricsCollector(config);
+
+        InstanceConfig instConfig = new InstanceConfig(config.queueCapacity(), config.workerCount());
+        InstanceManager instanceManager = new InstanceManager(instConfig, metrics.latencyTracker());
+
+        TrafficProfile profile = (config.trafficProfile() == TrafficProfileType.BURSTY)
+                ? new BurstyTrafficProfile(config.trafficRate(), config.burstMultiplier(), config.burstIntervalTicks())
+                : new ConstantTrafficProfile(config.trafficRate());
+
+        TrafficGenerator trafficGenerator = new TrafficGenerator(
+                profile,
+                new RequestIdGenerator(),
+                new ConstantServiceTimeModel(config.serviceTimeMs()),
+                clock
+        );
+
+        LoadBalancer lb = LoadBalancerSelection.create(config.lbStrategy());
+
+        EventBus eventBus = new EventBus();
+        this.engineEventBus = eventBus;
+
+        ScalingPolicy policy = new ThresholdScalingPolicy(
+                config.scaleUpQueueThreshold(),
+                config.scaleDownQueueThreshold(),
+                config.minInstanceCount(),
+                config.maxInstanceCount()
+        );
+        CooldownTracker cooldown = new CooldownTracker(config.cooldownTicks());
+        AutoScaler autoScaler = new AutoScaler(
+                config.autoscalerEvaluationIntervalTicks(),
+                policy, cooldown, instanceManager, eventBus
+        );
+
+        return new SimulationEngine(
+                config, clock, trafficGenerator, lb,
+                instanceManager, metrics, autoScaler, eventBus
+        );
+    }
+
+    private void showError(String title, String message) {
+        Alert alert = new Alert(Alert.AlertType.ERROR, message);
+        alert.setHeaderText(title);
+        alert.showAndWait();
+    }
 }
