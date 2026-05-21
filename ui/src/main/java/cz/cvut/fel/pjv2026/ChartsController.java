@@ -10,6 +10,11 @@ import javafx.scene.layout.VBox;
 
 import java.util.List;
 
+/**
+ * Owns the three live charts shown in the dashboard centre: throughput,
+ * average latency and active instance count. Each chart is backed by a single
+ * series whose data points are replaced on every snapshot from the engine.
+ */
 public class ChartsController {
 
     private final XYChart.Series<Number, Number> throughputSeries = new XYChart.Series<>();
@@ -28,16 +33,24 @@ public class ChartsController {
         instanceChart.getData().add(instanceSeries);
 
         root = new VBox(8, throughputChart, latencyChart, instanceChart);
-        root.setStyle("CHART_COLOR_1: #1f4e79;");
         VBox.setVgrow(throughputChart, Priority.ALWAYS);
         VBox.setVgrow(latencyChart, Priority.ALWAYS);
         VBox.setVgrow(instanceChart, Priority.ALWAYS);
     }
 
+    /**
+     * @return root node to embed in the parent layout
+     */
     public Node getView() {
         return root;
     }
 
+    /**
+     * Replaces the data points of all three series with the histories carried
+     * by the snapshot. The x-axis is anchored on the snapshot's current tick.
+     *
+     * @param snapshot current engine snapshot
+     */
     public void update(Snapshot snapshot) {
         long lastTick = snapshot.tick();
         replaceSeries(throughputSeries, snapshot.throughputHistory(), lastTick);
@@ -45,6 +58,9 @@ public class ChartsController {
         replaceSeries(instanceSeries, snapshot.instanceCountHistory(), lastTick);
     }
 
+    /**
+     * Clears all chart data; called on simulation reset.
+     */
     public void clear() {
         throughputSeries.getData().clear();
         latencySeries.getData().clear();
