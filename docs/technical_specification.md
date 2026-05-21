@@ -1,10 +1,22 @@
 # Cloud Autoscaling Simulator (Java + Maven + JavaFX)
 
-## Goal
+## Table of Contents
+
+- [1. Goal](#1-goal)
+  - [1.1 What is simulated](#11-what-is-simulated)
+  - [1.2 What is intentionally simplified](#12-what-is-intentionally-simplified)
+- [2. Module Structure](#2-module-structure)
+- [3. Architecture Overview](#3-architecture-overview)
+- [4. Autoscaler Design](#4-autoscaler-design)
+- [5. State Machine](#5-state-machine)
+- [6. Testing Approach](#6-testing-approach)
+- [7. Technologies](#7-technologies)
+
+## 1. Goal
 
 This project simulates a simplified "cloud service" handling incoming requests. Requests are generated over time, routed through a load balancer to multiple service instances, processed concurrently, and measured via metrics (latency, throughput, queue lengths). An autoscaler adjusts the number of instances based on system load. A JavaFX GUI visualizes the system behavior in real time.
 
-### What is simulated
+### 1.1 What is simulated
 
 - incoming requests arriving according to a traffic profile (constant / bursty)
 - load balancer routes each request to one service instance (strategy-based)
@@ -12,20 +24,33 @@ This project simulates a simplified "cloud service" handling incoming requests. 
 - autoscaler periodically evaluates metrics and scales instances up/down with cooldown to avoid thrashing
 - metrics are collected continuously and shown in GUI charts
 
-### What is intentionally simplified
+### 1.2 What is intentionally simplified
 
 - no real networking/HTTP stack
 - no real container orchestration
 - no persistence/database layer
 - time is simulated (tick-based), not real-time accurate to nanoseconds
 
-## Architecture Overview
+## 2. Module Structure
+
+- `core` = pure Java, no JavaFX dependency
+  - all simulation logic and configuration loading
+  - unit-testable without starting the JavaFX toolkit
+- `ui` = JavaFX dashboard
+  - depends on `core`
+
+## 3. Architecture Overview
 
 - SimulationEngine
   - simulation loop (tick)
   - orchestrates generator → load balancer → instances
   - triggers metrics + autoscaling
   - publishes immutable snapshots for the UI
+  - publishes `SIMULATION_STARTED` / `SIMULATION_STOPPED` to the `EventBus`
+
+- SimulationClock
+  - tick counter, converts ticks to simulated milliseconds
+  - shared by engine and `TrafficGenerator` so both agree on time
 
 - TrafficGenerator
   - generates requests according to the selected profile
@@ -36,9 +61,10 @@ This project simulates a simplified "cloud service" handling incoming requests. 
 - LoadBalancer
   - selects the target instance
   - e.g. round-robin, least-queue
+  - filters to ACTIVE via `AbstractLoadBalancer.activeOnly()` (DRAINING instances are skipped)
 
 - InstanceManager
-  - holds the active instances
+  - holds all non-swept instances (ACTIVE + DRAINING)
   - safe addition/removal at runtime
   - receives `InstanceConfig` and the shared `LatencyTracker` in the constructor to properly parameterize and measure latency of new instances
 
@@ -46,198 +72,90 @@ This project simulates a simplified "cloud service" handling incoming requests. 
   - fixed worker pool
   - bounded queue (backpressure)
   - when full → drop
-  - graceful shutdown via `retire()` / `isTerminated()`
+  - graceful shutdown via `retire()` (drains the queue before terminating)
 
 - MetricsCollector
   - throughput
   - latency
   - queue length
   - utilization
-  - owns `LatencyTracker`; the shared instance is injected into `ServiceInstance`
+  - owns `LatencyTracker`, the shared instance is injected into `ServiceInstance`
+  - owns three `TimeSeriesBuffer`s for chart histories
+  - produces the immutable `Snapshot` via `buildSnapshot(tick, instanceSnapshots)`
 
 - AutoScaler
   - scaling policy
   - cooldown
   - scale up/down
+  - cadence configurable via `evaluationIntervalTicks`
+  - publishes `SCALE_UP` / `SCALE_DOWN` to the `EventBus`
   - logs the decision reason via `ScalingDecision.reason`
 
+- Snapshot
+  - immutable record produced once per tick
+  - the only data structure crossing the engine → UI
+  - carries scalar metrics, history buffers, and per-instance views (ACTIVE + DRAINING)
+
+- EventBus
+  - publish/subscribe channel for `SimulationEvent`
+  - possibility to subscribe / unsubscribe / publish
+  - UI subscribers wrap handlers in `Platform.runLater`
+
+- ConfigLoader / ConfigValidator
+  - read JSON files into `SimulationConfigDto`
+  - validate ranges and cross-field invariants
+  - map DTO → `SimulationConfig` for the engine
+  - violations throw `ConfigValidationException`
+
 - JavaFX UI
-  - start/pause/resume/stop/reset
-  - parameter changes
+  - start/stop/reset
+  - Load config (JSON file picker) / Save log (export event log)
+  - parameter changes via slider, dropdown, spinner
   - charts (latency, throughput, instances)
   - instance table
+  - event log (scaling and lifecycle events)
   - reads snapshots (thread-safety via `Platform.runLater`)
 
-## Scaling Behavior
+## 4. Autoscaler Design
 
-Autoscaling evaluates the system every N ticks:
+- the `AutoScaler` checks the system every few ticks (`evaluationIntervalTicks` in `SimulationConfig`)
+- it looks at the average queue length and decides via `ThresholdScalingPolicy`
+  - queues too long (above `scaleUpQueueThreshold`) → `SCALE_UP` → `InstanceManager.addInstance()`
+  - queues mostly empty (below `scaleDownQueueThreshold`) → `SCALE_DOWN` → `InstanceManager.retireInstance(id)` on the newest ACTIVE instance
+  - otherwise → `NO_ACTION`
+- after each scale change a `CooldownTracker` blocks further scaling for `cooldownTicks` (prevents constant up-and-down)
+- it never goes below `minInstanceCount` or above `maxInstanceCount` set by the user
+  - as a safety net, `InstanceManager` itself always keeps at least one ACTIVE instance
+- when `autoscalerEnabled == false` the engine skips the autoscaler entirely
+- every decision is recorded with the value that caused
 
-- scale up if average queue length or utilization is above a threshold
-- scale down if the system is underutilized and queues are near empty
 
-A cooldown mechanism (tick-based) prevents rapid scale oscillation ("thrashing").
+## 5. State Machine
 
-## GUI
+- `IDLE` = no engine thread alive, configuration may be changed
+- `RUNNING` = tick loop active, live parameter widgets disabled
+- `STOPPED` = engine thread terminated, worker pools drained
 
-### Planned UI
+Transitions:
 
-- controls: start/pause/resume/stop/reset, traffic rate slider, LB strategy dropdown, load config
-- charts: avg latency, throughput, instance count
-- table: instances with queue length, active workers, processed count, dropped count
-- event log (scale up/down decisions with reason)
+- `start()` = `IDLE` → `RUNNING`
+- `stop()` = `RUNNING` / `PAUSED` → `STOPPED`
+- `reset()` = `STOPPED` → `IDLE`
 
-## Class Design (~55 classes/types)
+## 6. Testing Approach
 
-### 1) core (9)
+- unit TDD for isolated domain classes (M1–M4)
+- integration-first for the engine and autoscaler (M3–M4)
+  - integration tests written before the orchestration code
+  - engine driven through its public API, not internal state
+- UI is not auto-tested — JavaFX components exercised manually
 
-- SimulationEngine — `start/pause/resume/stop/reset`; `setOnSnapshotReady`
-- SimulationConfig — simulation configuration; `trafficProfile` is a `TrafficProfileType`; `serviceTimeMs` is the fixed request processing time
-- SimulationClock — `advance()` moves the tick forward, `tick()` returns the current value, `simulatedTimeMs()` converts it to ms
-- SimulationState (enum) — `IDLE / RUNNING / PAUSED / STOPPED`
-- Snapshot (immutable record for UI) — scalar metrics + `latencyHistory`, `throughputHistory`, `instanceCountHistory` for charts; no breakdown per request type
-- SimulationEvent (value object for log) — `tick`, `EventType type`, `message`
-- EventBus (simple publish-subscribe for UI/log) — `publish()` is called from the engine thread; UI handlers must use `Platform.runLater()`
-- TrafficProfileType (enum) — `CONSTANT / BURSTY`; a type-safe alternative to `String`
-- EventType (enum) — `SCALE_UP / SCALE_DOWN / CONFIG_LOADED / SIMULATION_STARTED / SIMULATION_STOPPED`
+## 7. Technologies
 
-### 2) traffic (5)
-
-- TrafficGenerator — receives `SimulationClock` and `ServiceTimeModel` in the constructor
-- TrafficProfile (interface)
-- AbstractTrafficProfile (abstract — shares `baseRate`; declares `abstract int requestsForTick(long tick)`)
-- ConstantTrafficProfile (extends AbstractTrafficProfile)
-- BurstyTrafficProfile (extends AbstractTrafficProfile)
-
-### 3) request model (5)
-
-- Request — `status` is `private volatile`; accessed via `getStatus()`, `markProcessing()`, `markCompleted()`, `markDropped()`; no `type` field
-- RequestStatus (enum)
-- RequestIdGenerator
-- ServiceTimeModel (interface) — `long serviceTimeMs()` with no parameter
-- ConstantServiceTimeModel (implements ServiceTimeModel) — returns a fixed value from `SimulationConfig.serviceTimeMs`
-
-### 4) load balancing (6)
-
-- LoadBalancer (interface)
-- AbstractLoadBalancer (abstract — validates an empty list)
-- RoundRobinLoadBalancer (extends AbstractLoadBalancer)
-- LeastQueueLoadBalancer (extends AbstractLoadBalancer) — skips instances in the `DRAINING` state via `getStatus()`
-- LoadBalancerType (enum)
-- LoadBalancerSelection (factory) — `create()` is a static method
-
-### 5) instances (6)
-
-- ServiceInstance — single retirement entry point `retire()` (atomically marks DRAINING, signals workers, shuts down pool); also `isTerminated()`, `getStatus()`; does NOT have `tick()`; `droppedCount` is delegated from `RequestQueue`
-- InstanceManager — receives `InstanceConfig` and the shared `LatencyTracker` in the constructor; `retireInstance(String instanceId)`: calls `instance.retire()` (marks DRAINING + shuts down pool); the instance remains in the list until its pool terminates, at which point `sweepTerminated()` (called by the engine each tick) removes it; `getInstances()` returns all non-swept instances (ACTIVE + DRAINING) — load balancers filter to ACTIVE via `AbstractLoadBalancer.activeOnly()`; `isTerminated()` is also used in `stop()`
-- InstanceConfig
-- InstanceStatus (enum: ACTIVE, DRAINING)
-- InstanceSnapshot (immutable DTO for UI) — contains `workerCount` for utilization calculation in `MetricsCollector`
-- RequestQueue (bounded queue with drop metrics)
-
-### 6) autoscaling (6)
-
-- AutoScaler
-- ScalingPolicy (interface)
-- ThresholdScalingPolicy
-- CooldownTracker
-- ScalingDecision (record) — `Decision decision`, `String reason`; factory methods `noAction()`, `scaleUp(double)`, `scaleDown(double)`
-- Decision (enum: SCALE_UP, SCALE_DOWN, NO_ACTION) — nested inside `ScalingDecision`
-
-### 7) metrics (4)
-
-- MetricsCollector — owns `LatencyTracker`; `buildSnapshot(long tick, List<InstanceSnapshot>)`; receives `tickDurationMs` from `SimulationConfig`
-- LatencyTracker — the shared instance is injected into `ServiceInstance`
-- ThroughputTracker — receives `tickDurationMs` in the constructor
-- TimeSeriesBuffer (ring buffer for chart data)
-
-### 8) config (3)
-
-- SimulationConfigDto (Jackson-serializable POJO) — contains `long serviceTimeMs` for the fixed processing time
-- ConfigLoader
-- ConfigValidator
-
-### 9) exceptions (3)
-
-- SimulationException (extends RuntimeException — base)
-- ConfigValidationException (extends SimulationException)
-- InstanceException (extends SimulationException)
-
-### 10) UI (8)
-
-- MainApp
-- MainController
-- ControlPanelController
-- ChartsController
-- InstancesTableController
-- ChartData (DTO: a single data point for charts — `double latency`, `double throughput`, `int instanceCount`; charts manage their own history from `Snapshot.latencyHistory` etc.)
-- InstanceRow (DTO: a row in the instance table)
-- UiMapper (Snapshot → UI mapping)
-
-## MVP Scope
-
-### Must
-
-- tick-based engine
-
-- correct start/pause/resume/stop/reset of the simulation
-  - stopping the generator
-  - finishing/terminating worker pools (graceful shutdown via `ServiceInstance.shutdown()`)
-  - reset via `SimulationEngine.reset()` returns the system to the `IDLE` state
-
-- request model
-  - id
-  - arrivalTime (set from `SimulationClock.simulatedTimeMs()`)
-  - serviceTimeMs
-
-- traffic generator
-  - constant rate
-  - bursty (ON/OFF or "periodic spikes")
-
-- load balancer
-  - round-robin
-  - least-queue
-
-- service instance
-  - bounded queue (capacity N)
-  - worker pool (fixed thread pool)
-  - when full → drop + metric
-
-- metrics
-  - throughput (req/s)
-  - avg latency
-  - queue length (avg + current)
-  - dropped count/rate
-  - number of instances
-
-- autoscaler
-  - periodically (every N ticks, configurable via `autoscalerEvaluationIntervalTicks`)
-  - scale up/down based on `avgQueueLength` (configurable thresholds `scaleUpQueueThreshold` / `scaleDownQueueThreshold`)
-  - cooldown (configurable via `cooldownTicks`)
-  - logs the decision reason in `ScalingDecision.reason`
-
-- UI (minimal dashboard)
-  - start/stop/reset
-  - 2–3 charts (request rate, latency, instances)
-  - a few live values (dropped, queue, throughput)
-
-- simple event log (scale decisions with reason)
-
-- immutable `Snapshot` (the UI reads only snapshots, never accessing live structures directly)
-
-### Should
-
-- latency percentiles
-  - p50   // maybe not necessary
-  - p95
-
-- autoscaler hysteresis
-  - different thresholds for up vs down (scaleUpQueueThreshold ≠ scaleDownQueueThreshold)
-
-- JSON scenario configuration (loading simulation parameters from a file)
-
-### Could
-
-- chaos mode (kill instance randomly)
-- additional LB strategy (least-active)
-- load test scenarios as preset profiles
-- export metrics to CSV
+- Java 21 — records, pattern matching, sealed types used throughout
+- JavaFX 21 — built-in `LineChart` / `TableView` cover the dashboard requirements without extra UI libraries
+- Maven (multi-module) — `javafx-maven-plugin` simplifies running JavaFX from the command line
+- JUnit 5.10 — project test framework
+- JSON library 2.17 — simple databinding from JSON into `SimulationConfigDto`
+- SLF4J 2.0 + Logback 1.5 — facade + production-grade backend
+  - logging convention by level (ERROR / WARN / INFO / DEBUG) documented in `.claude/docs/DELIVERY_PLAN.md`
