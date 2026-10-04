@@ -18,8 +18,8 @@ The application is a single-window JavaFX desktop app. No network connection, no
 ### 2.2 Getting the source
 
 ```
-git clone https://gitlab.fel.cvut.cz/B252_B0B36PJV/rouskalz.git
-cd rouskalz
+git clone https://github.com/alzbeta-rouskova/cloud-autoscaling-simulator.git
+cd cloud-autoscaling-simulator
 ```
 
 ### 2.3 Building
@@ -40,13 +40,13 @@ From the project root:
 mvn -pl ui javafx:run
 ```
 
-The `javafx-maven-plugin` resolves the JavaFX runtime, sets up the module path, and launches `cz.cvut.fel.pjv2026.MainApp`. After a few seconds the dashboard window appears.
+The `javafx-maven-plugin` resolves the JavaFX runtime, sets up the module path, and launches `cz.arouskova.autoscaler.MainApp`. After a few seconds the dashboard window appears.
 
 To stop the application, simply close the window. The application performs a graceful shutdown: a running simulation is stopped, worker pools drain, and the process exits.
 
 ### 3.2 From an IDE
 
-Open the project as a Maven project in IntelliJ IDEA or Eclipse, then run the class `cz.cvut.fel.pjv2026.Launcher` (in the `ui` module). The IDE handles the JavaFX module path automatically when the project is recognised as a Maven project.
+Open the project as a Maven project in IntelliJ IDEA or Eclipse, then run the class `cz.arouskova.autoscaler.Launcher` (in the `ui` module). The IDE handles the JavaFX module path automatically when the project is recognised as a Maven project.
 
 > `Launcher` is a plain (non-`Application`) entry point. It exists so the `Main-Class` of a packaged jar does not directly extend `javafx.application.Application`, which the JVM rejects unless the JavaFX modules are on the module path.
 
@@ -57,7 +57,7 @@ The window is divided into four areas:
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │  CONTROL PANEL  (top)                                            │
-│  ▶ Start  ■ Stop  ↻ Reset  [Load config] [Save log]              │
+│  ▶ Start  ⏸ Pause  ■ Stop  ↻ Reset  [Load config] [Save log]     │
 │  Traffic rate | LB strategy | Max instances                      │
 ├─────────────────────────────────────────────┬────────────────────┤
 │  STATUS BAR  Tick | Generated | Throughput  │                    │
@@ -82,6 +82,7 @@ The window is divided into four areas:
 | Button      | Effect                                                                                                   |
 |-------------|----------------------------------------------------------------------------------------------------------|
 | **▶ Start** | Starts a new simulation using the current configuration plus any live UI overrides (5.2).                |
+| **⏸ Pause / ▶ Resume** | Pauses the running simulation (state `PAUSED`, no new ticks) and resumes it from where it left off. Stop also works while paused. |
 | **■ Stop**  | Stops the running simulation gracefully — all worker pools drain and the engine state becomes `STOPPED`. |
 | **↻ Reset** | Returns to `IDLE`, clears charts, table, status bar and event log. The next Start builds a fresh engine. |
 
