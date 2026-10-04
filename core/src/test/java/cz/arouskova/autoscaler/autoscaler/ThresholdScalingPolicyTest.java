@@ -62,6 +62,7 @@ class ThresholdScalingPolicyTest {
                 0.0,
                 0.0,
                 activeInstanceCount,
+                0,
                 List.of(),
                 List.of(),
                 List.of(),
