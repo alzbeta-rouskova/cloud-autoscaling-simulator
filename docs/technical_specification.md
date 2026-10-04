@@ -132,13 +132,32 @@ This project simulates a simplified "cloud service" handling incoming requests. 
 
 ## 5. State Machine
 
+```mermaid
+stateDiagram-v2
+    [*] --> IDLE : application started
+
+    IDLE --> RUNNING : start()
+
+    RUNNING --> PAUSED : pause()
+    RUNNING --> STOPPED : stop()
+
+    PAUSED --> RUNNING : resume()
+    PAUSED --> STOPPED : stop()
+
+    STOPPED --> IDLE : reset()
+    STOPPED --> [*] : application terminated
+```
+
 - `IDLE` = no engine thread alive, configuration may be changed
 - `RUNNING` = tick loop active, live parameter widgets disabled
+- `PAUSED` = tick loop suspended, state kept until `resume()` or `stop()`
 - `STOPPED` = engine thread terminated, worker pools drained
 
 Transitions:
 
 - `start()` = `IDLE` → `RUNNING`
+- `pause()` = `RUNNING` → `PAUSED`
+- `resume()` = `PAUSED` → `RUNNING`
 - `stop()` = `RUNNING` / `PAUSED` → `STOPPED`
 - `reset()` = `STOPPED` → `IDLE`
 
@@ -158,4 +177,4 @@ Transitions:
 - JUnit 5.10 — project test framework
 - JSON library 2.17 — simple databinding from JSON into `SimulationConfigDto`
 - SLF4J 2.0 + Logback 1.5 — facade + production-grade backend
-  - logging convention by level (ERROR / WARN / INFO / DEBUG) documented in `.claude/docs/DELIVERY_PLAN.md`
+  - logging convention by level: ERROR = failures (config load, tick), WARN = rejected/dropped requests, ignored lifecycle calls, blocked scale-down, INFO = lifecycle and scaling events, DEBUG = per-tick metrics and autoscaler evaluations
