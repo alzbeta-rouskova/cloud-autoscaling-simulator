@@ -85,6 +85,7 @@ public class MainController {
         this.instancesTable = new InstancesTableController();
 
         controlPanel.setOnStart(this::startSimulation);
+        controlPanel.setOnPauseToggle(this::togglePause);
         controlPanel.setOnStop(this::stopSimulation);
         controlPanel.setOnReset(this::resetSimulation);
         controlPanel.setOnConfigLoaded(this::loadConfigFile);
@@ -163,6 +164,20 @@ public class MainController {
 
         engine.start();
         controlPanel.updateState(SimulationState.RUNNING);
+    }
+
+    private void togglePause() {
+        if (engine == null) {
+            return;
+        }
+        if (engine.state() == SimulationState.RUNNING) {
+            engine.pause();
+            appendEventLog("[ENGINE] simulation paused");
+        } else if (engine.state() == SimulationState.PAUSED) {
+            engine.resume();
+            appendEventLog("[ENGINE] simulation resumed");
+        }
+        controlPanel.updateState(engine.state());
     }
 
     private void stopSimulation() {

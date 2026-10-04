@@ -27,7 +27,7 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
- * Top control panel of the dashboard: lifecycle buttons (Start / Stop / Reset),
+ * Top control panel of the dashboard: lifecycle buttons (Start / Pause / Stop / Reset),
  * Load config / Save log buttons, traffic-rate slider, load-balancer dropdown
  * and max-instances spinner. The controller is purely view-side — it exposes
  * the user's current selections through getters and forwards button clicks to
@@ -38,6 +38,7 @@ public class ControlPanelController {
     private final Stage stage;
 
     private final Button startButton = new Button("▶ Start");
+    private final Button pauseButton = new Button("⏸ Pause");
     private final Button stopButton = new Button("■ Stop");
     private final Button resetButton = new Button("↻ Reset");
     private final Button loadConfigButton = new Button("Load config");
@@ -51,6 +52,7 @@ public class ControlPanelController {
     private final HBox root;
 
     private Runnable onStart;
+    private Runnable onPauseToggle;
     private Runnable onStop;
     private Runnable onReset;
     private Consumer<Path> onConfigLoaded;
@@ -74,6 +76,7 @@ public class ControlPanelController {
         maxInstancesSpinner.setPrefWidth(80);
 
         startButton.setOnAction(e -> { if (onStart != null) onStart.run(); });
+        pauseButton.setOnAction(e -> { if (onPauseToggle != null) onPauseToggle.run(); });
         stopButton.setOnAction(e -> { if (onStop != null) onStop.run(); });
         resetButton.setOnAction(e -> { if (onReset != null) onReset.run(); });
         loadConfigButton.setOnAction(e -> handleLoadConfig());
@@ -83,7 +86,7 @@ public class ControlPanelController {
         startButton.setStyle("-fx-base: #4caf50;");
         stopButton.setStyle("-fx-base: #f44336;");
 
-        HBox lifecycle = new HBox(6, startButton, stopButton, resetButton, loadConfigButton, saveLogButton);
+        HBox lifecycle = new HBox(6, startButton, pauseButton, stopButton, resetButton, loadConfigButton, saveLogButton);
         lifecycle.setAlignment(Pos.CENTER_LEFT);
 
         VBox trafficBox = labeled("Traffic rate (req/tick)",
@@ -131,6 +134,11 @@ public class ControlPanelController {
         this.onStart = r;
     }
 
+    /** Registers the callback fired by the Pause / Resume button. */
+    public void setOnPauseToggle(Runnable r) {
+        this.onPauseToggle = r;
+    }
+
     /** Registers the callback fired by the Stop button. */
     public void setOnStop(Runnable r) {
         this.onStop = r;
@@ -175,6 +183,7 @@ public class ControlPanelController {
         switch (state) {
             case IDLE -> {
                 startButton.setDisable(false);
+                setPauseButton(true, "⏸ Pause");
                 stopButton.setDisable(true);
                 resetButton.setDisable(true);
                 loadConfigButton.setDisable(false);
@@ -182,6 +191,7 @@ public class ControlPanelController {
             }
             case RUNNING, PAUSED -> {
                 startButton.setDisable(true);
+                setPauseButton(false, state == SimulationState.PAUSED ? "▶ Resume" : "⏸ Pause");
                 stopButton.setDisable(false);
                 resetButton.setDisable(true);
                 loadConfigButton.setDisable(true);
@@ -189,12 +199,18 @@ public class ControlPanelController {
             }
             case STOPPED -> {
                 startButton.setDisable(true);
+                setPauseButton(true, "⏸ Pause");
                 stopButton.setDisable(true);
                 resetButton.setDisable(false);
                 loadConfigButton.setDisable(true);
                 setControlsDisabled(true);
             }
         }
+    }
+
+    private void setPauseButton(boolean disabled, String text) {
+        pauseButton.setDisable(disabled);
+        pauseButton.setText(text);
     }
 
     private void setControlsDisabled(boolean disabled) {

@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -129,6 +130,75 @@ class SimulationEngineIntegrationTest {
         h.engine.stop();
 
         assertTrue(last.get().droppedCount() > 0);
+    }
+
+    @Test
+    void pause_halts_ticks_and_resume_continues() throws InterruptedException {
+        Harness h = new Harness(defaultConfig());
+        AtomicInteger ticks = new AtomicInteger();
+        h.engine.setOnSnapshotReady(s -> ticks.incrementAndGet());
+
+        h.engine.start();
+        awaitTicks(ticks, 3);
+        h.engine.pause();
+        // let an in-flight tick finish before sampling
+        Thread.sleep(150);
+        int pausedAt = ticks.get();
+        Thread.sleep(300);
+        int afterWait = ticks.get();
+        SimulationState whilePaused = h.engine.state();
+
+        h.engine.resume();
+        boolean resumed = awaitTicks(ticks, afterWait + 3);
+        SimulationState afterResume = h.engine.state();
+        h.engine.stop();
+
+        assertEquals(SimulationState.PAUSED, whilePaused);
+        assertEquals(pausedAt, afterWait);
+        assertTrue(resumed);
+        assertEquals(SimulationState.RUNNING, afterResume);
+    }
+
+    @Test
+    void stop_from_paused_terminates_instances() throws InterruptedException {
+        Harness h = new Harness(defaultConfig());
+        AtomicInteger ticks = new AtomicInteger();
+        h.engine.setOnSnapshotReady(s -> ticks.incrementAndGet());
+
+        h.engine.start();
+        awaitTicks(ticks, 2);
+        h.engine.pause();
+        h.engine.stop();
+
+        assertEquals(SimulationState.STOPPED, h.engine.state());
+        assertTrue(h.instanceManager.getInstances().stream()
+                .allMatch(ServiceInstance::isTerminated));
+    }
+
+    @Test
+    void pause_and_resume_are_ignored_outside_valid_states() {
+        Harness h = new Harness(defaultConfig());
+
+        h.engine.pause();
+        assertEquals(SimulationState.IDLE, h.engine.state());
+
+        h.engine.start();
+        h.engine.resume();
+        SimulationState afterResume = h.engine.state();
+        h.engine.stop();
+
+        assertEquals(SimulationState.RUNNING, afterResume);
+    }
+
+    private static boolean awaitTicks(AtomicInteger ticks, int target) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 5_000;
+        while (ticks.get() < target) {
+            if (System.currentTimeMillis() > deadline) {
+                return false;
+            }
+            Thread.sleep(10);
+        }
+        return true;
     }
 
     private static SimulationConfig defaultConfig() {
