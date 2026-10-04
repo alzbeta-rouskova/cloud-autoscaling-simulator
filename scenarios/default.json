@@ -13,5 +13,7 @@
   "autoscalerEnabled": true,
   "scaleUpQueueThreshold": 8,
   "scaleDownQueueThreshold": 2,
-  "cooldownTicks": 10
+  "cooldownTicks": 10,
+  "autoscalerEvaluationIntervalTicks": 5,
+  "tickDurationMs": 100
 }
